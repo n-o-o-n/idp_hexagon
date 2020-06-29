@@ -22,7 +22,7 @@ Build SDK, the resulting binary will be in $SDK/bin/procs/hexagon.dll.
 
 Binary download
 ---------------
-Binaries for Windows can be found under [releases](./releases)
+Binaries for Windows can be found under [releases](https://github.com/n-o-o-n/idp_hexagon/releases)
 
 
 Installation

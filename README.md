@@ -8,13 +8,13 @@ Features:
  * Supports ELF relocations (both static and dynamic)
  * Supports IDA v7.0 and v7.2
 
-Information on instructions was mainly gathered from [LLVM](https://github.com/llvm-mirror/llvm/blob/master/lib/Target/Hexagon/HexagonDepInstrInfo.td), whereas missing system-level instructions were taken from Programmer's Reference Manual.
+Information on instructions was mainly gathered from [LLVM](https://github.com/llvm/llvm-project/blob/master/llvm/lib/Target/Hexagon/HexagonDepInstrInfo.td), whereas missing system-level instructions were taken from Programmer's Reference Manual.
 
 
 Compilation
 -----------
 You will need the IDA 7.0 [SDK](https://www.hex-rays.com/products/ida/support/ida/idasdk70.zip) or IDA 7.2 [SDK](https://www.hex-rays.com/products/ida/support/ida/idasdk72.zip) (password protected).
-You will need a C++17 compiler, like Visual Studio 2015/2017, or any recent GCC or Clang.
+You will also need a C++17 compiler, like Visual Studio 2015/2017, or any recent GCC or Clang.
 
 Install target IDA SDK, copy `hexagon` folder into $SDK/module folder, and modify $SDK/module/makefile to include hexagon in `ALLDIRS`.
 Build SDK, the resulting binary will be in $SDK/bin/procs/hexagon.dll.
@@ -22,7 +22,7 @@ Build SDK, the resulting binary will be in $SDK/bin/procs/hexagon.dll.
 
 Binary download
 ---------------
-Binaries for Windows can be found under [releases](./releases)
+Binaries for Windows can be found under [releases](https://github.com/n-o-o-n/idp_hexagon/releases)
 
 
 Installation

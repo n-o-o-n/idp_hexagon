@@ -6,6 +6,23 @@
 ------------------------------------------------------------------------------*/
 #include "common.h"
 
+template <typename Visitor, typename ...Args>
+static __inline bool visit_sub_insn( const insn_t &insn, Visitor visitor, Args... args )
+{
+    if( (insn.flags & INSN_DUPLEX) )
+    {
+        const op_t *ops = insn.ops;
+        uint32_t itype = sub_insn_code( insn, 1 ), flags = insn_flags( insn, 1 );
+        if( visitor( itype, flags, ops, args... ) )
+            return true;
+        ops += get_num_ops( itype, flags );
+        itype = sub_insn_code( insn, 0 ), flags = insn_flags( insn, 0 );
+        return visitor( itype, flags, ops, args... );
+    }
+    else
+        return visitor( insn.itype, insn_flags( insn ), insn.ops, args... );
+}
+
 static bool is_ret_or_jump( const insn_t &insn )
 {
     // returns true if it's an unconditional jump or return
@@ -71,11 +88,18 @@ static void handle_insn( const insn_t &insn, uint32_t itype, uint32_t flags, con
     case Hex_add:
         ops += get_op_index( flags );
         F = get_flags( insn.ea );
-        if( ops[1].is_reg( REG_SP ) && pfn && may_create_stkvars() && !is_defarg( F, ops[2].n ) )
+        if( !ops[0].is_reg( REG_SP ) && ops[1].is_reg( REG_SP ) &&
+            pfn && may_create_stkvars() && !is_defarg( F, ops[2].n ) )
         {
             // make a stack variable for Rd = add(sp, #I)
             if ( insn.create_stkvar( ops[2], ops[2].value, 0 /*unknown size*/ ) )
                 op_stkvar( insn.ea, ops[2].n );
+        }
+        if( ops[0].is_reg( REG_SP ) && ops[1].is_reg( REG_SP ) &&
+            pfn && may_trace_sp() )
+        {
+            // trace modification of SP register
+            add_auto_stkpnt( pfn, insn.ea + insn.size, ops[2].value );
         }
         if( ops[1].is_reg( REG_PC ) &&
             !is_defarg( F, ops[2].n ) && !is_off( F, ops[2].n ) )
@@ -115,10 +139,10 @@ static void handle_operand( const insn_t &insn, const op_t &op )
             if( target != BADADDR )
                 insn.create_op_data( target, op );
         }
-        if( op.reg == REG_SP && may_create_stkvars() && !is_defarg( F, op.n ) &&
-            get_func( insn.ea ) != NULL )
+        if( (op.reg == REG_SP || op.reg == REG_FP) && may_create_stkvars() &&
+            !is_defarg( F, op.n ) && get_func( insn.ea ) != NULL )
         {
-            // make a stack variable for memX(sp + #I)
+            // make a stack variable for memX({sp|fp} + #I)
             // NB: for vmem() the offset is in vector size units
             bool created = op.dtype == dt_byte64?
                 insn.create_stkvar( op, op.addr * 128, 0 ) :
@@ -171,8 +195,9 @@ bool hex_is_call_insn( const insn_t &insn )
            insn.itype == Hex_callr;
 }
 
-static bool is_ret_insn( uint32_t itype, uint32_t /*flags*/, const op_t *ops, bool strict )
+static bool is_return( uint32_t itype, uint32_t /*flags*/, const op_t *ops, bool strict )
 {
+    // returns true if instruction is a return from sub-routine
     // TODO: should we check if it's conditional?
     if( !strict &&
         (itype == Hex_deallocframe_raw ||
@@ -187,18 +212,7 @@ static bool is_ret_insn( uint32_t itype, uint32_t /*flags*/, const op_t *ops, bo
 
 bool hex_is_ret_insn( const insn_t &insn, bool strict )
 {
-    if( (insn.flags & INSN_DUPLEX) )
-    {
-        const op_t *ops = insn.ops;
-        uint32_t itype = sub_insn_code( insn, 1 ), flags = insn_flags( insn, 1 );
-        if( is_ret_insn( itype, flags, ops, strict ) )
-            return true;
-        ops += get_num_ops( itype, flags );
-        itype = sub_insn_code( insn, 0 ), flags = insn_flags( insn, 0 );
-        return is_ret_insn( itype, flags, ops, strict );
-    }
-    else
-        return is_ret_insn( insn.itype, insn_flags( insn ), insn.ops, strict );
+    return visit_sub_insn( insn, is_return, strict );
 }
 
 ssize_t hex_is_align_insn( ea_t ea )
@@ -237,4 +251,48 @@ bool hex_is_jump_func( func_t &pfn, ea_t *jump_target, ea_t *func_pointer )
         return true;
     }
     return false;
+}
+
+static bool create_frame( uint32_t itype, uint32_t /*flags*/, const op_t *ops, func_t *pfn )
+{
+    // allocframe(#I)
+    if( itype == Hex_allocframe )
+    {
+        pfn->flags |= FUNC_FRAME; // uses frame pointer
+        update_func( pfn );
+        add_frame( pfn, ops[0].value/*local size*/, 8/*saved size*/, 0/*argsize*/ );
+        return true;
+    }
+    // sp = add(sp, #I)
+    if( itype == Hex_add && ops[0].is_reg( REG_SP ) &&
+        ops[1].is_reg( REG_SP ) && ops[2].type == o_imm )
+    {
+        add_frame( pfn, -ops[2].value/*local size*/, 0/*saved size*/, 0/*argsize*/ );
+        return true;
+    }
+    return false;
+}
+
+void hex_create_func_frame( func_t *pfn )
+{
+    ea_t ea = pfn->start_ea, end = pfn->end_ea;
+    insn_t insn;
+
+    for( int i = 0; i < 10 && ea < end; i++ )
+    {
+        if( !decode_insn( &insn, ea ) ||
+            visit_sub_insn( insn, create_frame, pfn ) )
+            return;
+
+        ea += insn.size;
+    }
+}
+
+int hex_is_sp_based( const insn_t &/*insn*/, const op_t &op )
+{
+    // Rd = add(sp, #I) or memX({sp|fp} + #I)
+    if( op.type == o_displ && op.reg == REG_FP )
+        return OP_FP_BASED | OP_SP_ADD;
+    else
+        return OP_SP_BASED | OP_SP_ADD;
 }

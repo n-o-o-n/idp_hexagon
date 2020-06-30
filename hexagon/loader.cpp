@@ -278,7 +278,13 @@ static const char* proc_relocation(
     // the rest is not implemented yet
     default: __fail:
         msg( "Couldn't relocate @0x%X: type=%2d, Sadd=0x%X, S=0x%X, symbol='%s'\n",
-             rel_data.P, rel_data.type, rel_data.Sadd, rel_data.S, symbol->original_name );
+             rel_data.P, rel_data.type, rel_data.Sadd, rel_data.S,
+         #if IDA_SDK_VERSION == 700
+             symbol->original_name
+         #else
+             symbol->original_name.c_str()
+         #endif
+        );
         return E_RELOC_UNKNOWN;
     }
 
@@ -295,7 +301,7 @@ __fixup:
     return NULL; // ok
 }
 
-static const char* proc_dynamic_tag( reader_t &reader, const Elf64_Dyn *dyn )
+static const char* proc_dynamic_tag( reader_t &/*reader*/, const Elf64_Dyn *dyn )
 {
     switch( dyn->d_tag )
     {

@@ -46,7 +46,7 @@ enum {
     REG_FP          = REG_R(30),        // frame pointer
     REG_LR          = REG_R(31),        // return address
     REG_P0          = REG_R0 + 32,      // scalar predicates
-    REG_V0          = REG_P0 + 4,       // vector registers (TODO: can be reversed!)
+    REG_V0          = REG_P0 + 4,       // vector registers
     REG_Q0          = REG_V0 + 32,      // vector predicates
     REG_Z           = REG_Q0 + 4,       // 2048 bits regsiter for NN
     REG_VTMP        = REG_Z + 1,        // virtual register for temporary loads

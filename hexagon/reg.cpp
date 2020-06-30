@@ -108,6 +108,15 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
         if( errbuf ) *errbuf = err;
         return -1;
     }
+    case processor_t::ev_loader_elf_machine: {
+        // note: this callback is called only if the user clicked "Set" button
+        // in "Load a new file" dialog
+        auto li = va_arg( va, linput_t* );
+        auto machine_type = va_arg( va, int );
+        auto p_procname = va_arg( va, const char** );
+        auto p_pd = va_arg( va, proc_def_t** );
+        return loader_elf_machine( li, machine_type, p_procname, p_pd );
+    }
     case processor_t::ev_ana_insn: {
         return ana( *va_arg( va, insn_t* ) );
     }
@@ -136,35 +145,37 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
     }
     case processor_t::ev_is_ret_insn: {
         // not strictly necessary, everything works as is
-        auto insn = va_arg(va, const insn_t*);
-        auto strict = va_argi(va, bool);
+        auto insn = va_arg( va, const insn_t* );
+        auto strict = va_argi( va, bool );
         return hex_is_ret_insn( *insn, strict )? 1 : -1;
     }
-    case processor_t::ev_loader_elf_machine: {
-        // note: this callback is called only if the user clicked "Set" button
-        // in "Load a new file" dialog
-        auto li = va_arg( va, linput_t* );
-        auto machine_type = va_arg( va, int );
-        auto p_procname = va_arg( va, const char** );
-        auto p_pd = va_arg( va, proc_def_t** );
-        return loader_elf_machine( li, machine_type, p_procname, p_pd );
+    case processor_t::ev_is_align_insn: {
+        return hex_is_align_insn( va_arg( va, ea_t ) );
+    }
+    case processor_t::ev_is_jump_func: {
+        auto pfn = va_arg( va, func_t* );
+        auto jump_target = va_arg( va, ea_t* );
+        auto func_pointer = va_arg( va, ea_t* );
+        return hex_is_jump_func( *pfn, jump_target, func_pointer )? 1 : 0;
+    }
+    case processor_t::ev_create_func_frame: {
+        hex_create_func_frame( va_arg( va, func_t* ) );
+        return 1;
+    }
+    case processor_t::ev_is_sp_based: {
+        auto mode = va_arg( va, int* );
+        auto insn = va_arg( va, const insn_t* );
+        auto op = va_arg( va, const op_t* );
+        *mode = hex_is_sp_based( *insn, *op );
+        return 1;
     }
     case processor_t::ev_realcvt: {
         // must be implemented for floats to work
-        auto m = va_arg(va, void*);
-        auto e = va_arg(va, uint16*);
-        auto swt = va_argi(va, uint16);
+        auto m = va_arg( va, void* );
+        auto e = va_arg( va, uint16* );
+        auto swt = va_argi( va, uint16 );
         int code = ieee_realcvt( m, e, swt );
         return code == 0? 1 : code;
-    }
-    case processor_t::ev_is_align_insn: {
-        return hex_is_align_insn( va_arg(va, ea_t) );
-    }
-    case processor_t::ev_is_jump_func: {
-        auto pfn = va_arg(va, func_t*);
-        auto jump_target = va_arg(va, ea_t*);
-        auto func_pointer = va_arg(va, ea_t*);
-        return hex_is_jump_func( *pfn, jump_target, func_pointer )? 1 : 0;
     }
     case processor_t::ev_max_ptr_size:              return inf.cc.size_l;
     case processor_t::ev_get_default_enum_size:     return inf.cc.size_e;

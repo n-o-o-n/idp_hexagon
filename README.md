@@ -40,8 +40,6 @@ Otherwise IDA would still sucessfully load binary, but will complain about unkno
 Issues
 ------
  * Switches are not recognized yet
- * FP-based stack variables are not recognized yet
- * No support yet for 3-instruction packets in V67t
  * In case of mixed code and data the former may have incorrect packet boundaries
  * Some rare relocation types are not properly recognized
  * Does not distinguish between different Hexagon versions; will disassemble instructions not supported by a particular version
@@ -68,3 +66,4 @@ LGPLv3. For more information see [LICENSE](./LICENSE).
 History
 -------
 2020-06-29 version 1.0
+2020-06-30 added support for FP-based stack vars

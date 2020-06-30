@@ -118,7 +118,8 @@ static void hex_out_reg( outctx_t &ctx, uint32_t reg, uint32_t flags = 0 )
                 ctx.out_printf( "r%u:%u", reg + 1 - REG_R0, reg - REG_R0 );
             }
             else if( IN_RANGE(reg, REG_V0, REG_V0 + 31) ) {
-                // may be either v1:0 or v0:1
+                // may be either v1:0 (normal) or v0:1 (reversed)
+                // NB: although we support reversed pair, it cannot currently be produced by compiler
                 ctx.out_printf( "v%u:%u", (reg - REG_V0) ^ 1 , reg - REG_V0 );
             }
             else if( IN_RANGE(reg, REG_C0, REG_C0 + 31) ) {

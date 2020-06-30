@@ -35,3 +35,5 @@ void out_header( outctx_t &ctx );
 void out_footer( outctx_t &ctx );
 void out_insn( outctx_t &ctx );
 ssize_t out_operand( outctx_t &ctx, const op_t &op );
+void hex_create_func_frame( func_t *pfn );
+int hex_is_sp_based( const insn_t &insn, const op_t &op );

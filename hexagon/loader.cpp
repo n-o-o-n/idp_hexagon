@@ -133,7 +133,7 @@ static uint32_t apply_mask( uint32_t v, uint32_t mask )
 // notes:
 // 1) most of the functions provided by ELF loader are not accessible
 //    because they are non-virtual and not exported by IDA
-// 2) we process GOT/PLT relocations as if they we normal ones,
+// 2) we process GOT/PLT relocations as if they were the normal ones,
 //    without creating any table entries
 //
 static const char* proc_relocation(
@@ -305,8 +305,6 @@ static const char* proc_dynamic_tag( reader_t &/*reader*/, const Elf64_Dyn *dyn 
 {
     switch( dyn->d_tag )
     {
-    case DT_NEEDED:      return "Uses        :";
-    case DT_SONAME:      return "Library name:";
     case DT_PLTGOT:      _GOT_ = dyn->d_un; break;
     case DT_HEXAGON_PLT: _PLT_ = dyn->d_un; break;
     }

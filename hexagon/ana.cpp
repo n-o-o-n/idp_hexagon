@@ -4384,8 +4384,8 @@ ssize_t ana( insn_t &insn )
     bool decoded = parse == PARSE_DUPLEX?
         decode_duplex( insn, word, extender ) :
         decode_single( insn, word, extender );
-    if( !decoded )
-        msg( "0x%03x: failed to decode - word = 0x%08x (ext=0x%llx)\n", insn.ea, word, extender );
+    // if( !decoded )
+    //     msg( "0x%03x: failed to decode - word = 0x%08x (ext=0x%llx)\n", insn.ea, word, extender );
     // return instruction size in bytes or 0
     return decoded? insn.size : 0;
 }

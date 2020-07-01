@@ -66,4 +66,5 @@ LGPLv3. For more information see [LICENSE](./LICENSE).
 History
 -------
 2020-06-29 version 1.0  
-2020-06-30 added support for FP-based stack vars
+2020-06-30 added support for FP-based stack vars  
+2020-07-01 added basic support for type information; fixed warning message in IDA 7.2 ("Bad declaration..."); symbol, string and relocation tables are now shown for .so binaries

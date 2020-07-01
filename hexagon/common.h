@@ -9,6 +9,7 @@
 #include "fixup.hpp"
 #include "frame.hpp"
 #include "ieee.h"
+#include "typeinf.hpp"
 #include "ins.h"
 
 #define IN_RANGE(u,lo,hi)           (uint32_t((u) - (lo)) <= ((hi) - (lo)))

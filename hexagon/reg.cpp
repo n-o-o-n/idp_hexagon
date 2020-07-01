@@ -177,6 +177,17 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
         int code = ieee_realcvt( m, e, swt );
         return code == 0? 1 : code;
     }
+    //
+    // type information callbacks
+    //
+    case processor_t::ev_decorate_name: {
+        auto outbuf = va_arg( va, qstring* );
+        auto name = va_arg( va, const char* );
+        auto mangle = va_argi( va, bool );
+        auto cc = va_argi( va, cm_t );
+        auto type = va_arg( va, tinfo_t* );
+        return gen_decorate_name( outbuf, name, mangle, cc, type );
+    }
     case processor_t::ev_max_ptr_size:              return inf.cc.size_l;
     case processor_t::ev_get_default_enum_size:     return inf.cc.size_e;
     }
@@ -273,7 +284,7 @@ processor_t LPH = {
     PR_USE32 |              // supports 32-bit addressing?
     PR_DEFSEG32 |           // segments are 32-bit by default
     PRN_HEX |               // default number representation: == hex
-    //PR_DELAYED |          // has delay slots
+    PR_TYPEINFO |           // support the type system notifications
     PR_ALIGN,               // all data items should be aligned properly
                             // flag2:
     PR2_REALCVT |           // the module has 'realcvt' event implementation

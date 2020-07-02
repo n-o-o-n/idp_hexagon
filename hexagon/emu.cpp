@@ -37,7 +37,7 @@ static bool is_ret_or_jump( const insn_t &insn )
            (insn_flags( insn, 0 ) & PRED_MASK) == 0;
 }
 
-static bool is_basic_block_end( const insn_t &insn )
+static bool hex_is_basic_block_end( const insn_t &insn )
 {
     static ea_t next_ea = BADADDR;
     static bool basic_block_end = false;
@@ -166,7 +166,7 @@ static void handle_operand( const insn_t &insn, const op_t &op )
 // emulate an instruction
 ssize_t emu( const insn_t &insn )
 {
-    if( !is_basic_block_end( insn ) )
+    if( !hex_is_basic_block_end( insn ) )
         add_cref( insn.ea, insn.ea + insn.size, fl_F );
     else if( get_auto_state() == AU_USED )
         recalc_spd( insn.ea );
@@ -295,4 +295,86 @@ int hex_is_sp_based( const insn_t &/*insn*/, const op_t &op )
         return OP_FP_BASED | OP_SP_ADD;
     else
         return OP_SP_BASED | OP_SP_ADD;
+}
+
+//
+// type information support
+//
+
+void hex_get_cc_regs( cm_t /*cc*/, callregs_t &regs )
+{
+    // provide register allocation schema to IDA
+    static const int r0_5[] = { REG_R0 + 0, REG_R0 + 1, REG_R0 + 2, REG_R0 + 3, REG_R0 + 4, REG_R0 + 5, -1 };
+    regs.set( ARGREGS_GP_ONLY, r0_5, NULL );
+}
+
+bool hex_calc_retloc( cm_t /*cc*/, const tinfo_t &type, argloc_t &loc )
+{
+    if( !type.is_void() )
+    {
+        size_t size = type.get_size();
+        if( size == BADSIZE ) return false;
+        if( size <= 4 )
+            loc.set_reg1( REG_R0 );
+        else if( size <= 8 )
+            loc.set_reg2( REG_R0, REG_R0 + 1 );
+        else
+        {
+            // allocate on stack with pointer in R0
+            scattered_aloc_t *sa = new scattered_aloc_t;
+            argpart_t &regloc = sa->push_back();
+            regloc.set_reg1( REG_R0 );
+            regloc.off = 0;
+            regloc.size = 4;
+            argpart_t &stkloc = sa->push_back();
+            stkloc.set_stkoff( 0 );
+            stkloc.off = 0;
+            stkloc.size = size;
+            loc.consume_scattered( sa );
+        }
+    }
+    return true;
+}
+
+bool hex_calc_arglocs( func_type_data_t &fti )
+{
+    // fill the return value location
+    if( !hex_calc_retloc( fti.get_cc(), fti.rettype, fti.retloc ) )
+        return false;
+
+    uint32_t reg = 0, stk_sz = 0, align;
+    // update registers/stack consumed by return value
+    size_t size = (fti.rettype.get_size() + 3) >> 2;
+    if( size <= 2 ) reg = size;
+    else stk_sz = fti.rettype.get_size();
+
+    // fill the arguments locations
+    for( size_t i = 0; i < fti.size(); i++ )
+    {
+        funcarg_t &arg = fti[i];
+        size = arg.type.get_size( &align );
+        if( size == BADSIZE ) return false;
+        if( size <= 4 && reg <= 5 )
+        {
+            arg.argloc.set_reg1( REG_R0 + reg );
+            reg++;
+        }
+        else if( size <= 8 && reg < 5 )
+        {
+            // skip odd-numbered register
+            reg = (reg + 1) & ~1;
+            arg.argloc.set_reg2( REG_R0 + reg, REG_R0 + reg + 1 );
+            reg += 2;
+        }
+        else
+        {
+            // use stack
+            stk_sz = align_up( stk_sz, align );
+            arg.argloc.set_stkoff( stk_sz );
+            stk_sz += size;
+        }
+    }
+    // update total size of stack arguments
+    fti.stkargs = stk_sz;
+    return true;
 }

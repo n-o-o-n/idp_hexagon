@@ -38,3 +38,6 @@ void out_insn( outctx_t &ctx );
 ssize_t out_operand( outctx_t &ctx, const op_t &op );
 void hex_create_func_frame( func_t *pfn );
 int hex_is_sp_based( const insn_t &insn, const op_t &op );
+void hex_get_cc_regs( cm_t cc, callregs_t &regs );
+bool hex_calc_retloc( cm_t cc, const tinfo_t &type, argloc_t &loc );
+bool hex_calc_arglocs( func_type_data_t &fti );

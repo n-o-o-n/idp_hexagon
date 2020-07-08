@@ -44,6 +44,7 @@ Issues
  * Some rare relocation types are not properly recognized
  * Does not distinguish between different Hexagon versions; will disassemble instructions not supported by a particular version
  * IDA stores flags for two operands only, and all subsequent operands will have the same flag. For example, if the 2nd operand is an offset, then 4th will be treated as offset too.
+ * Xref to a stack variable fails; IDA checks if an instruction modifies operand by reading from processor_t::instruc (which is NULL)
 
 
 Other Hexagon Processor modules

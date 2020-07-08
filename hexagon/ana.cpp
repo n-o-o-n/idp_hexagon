@@ -52,11 +52,12 @@ static ea_t find_packet_end( ea_t ea )
     return ea;
 }
 
-static ea_t find_packet_start( ea_t ea )
+static ea_t find_packet_boundaries( ea_t ea, ea_t *pkt_end )
 {
     // scan instructions backwards in order to find the packet start
     // WARNING: the result may be wrong in case of mixed instructions and data
     ea_t start = getseg( ea )->start_ea, end = find_packet_end( ea );
+    *pkt_end = end;
     // packet can have max 4 words from the end
     if( end > start + 12 ) start = end - 12;
 
@@ -4373,8 +4374,11 @@ ssize_t ana( insn_t &insn )
         // usually all instructions are 4 bytes long
         insn.size = 4;
     }
-    // get packet flags
-    s_pkt_start = find_packet_start( ea );
+    // set packet flags
+    ea_t pkt_end;
+    s_pkt_start = find_packet_boundaries( ea, &pkt_end );
+    insn.flags |= INSN_BEG_OFF( (insn.ea - s_pkt_start) >> 2 ) |
+                  INSN_END_OFF( (pkt_end - insn.ea) >> 2 );
     if( insn.ea == s_pkt_start )
         insn.flags |= INSN_PKT_BEG;
     if( parse == PARSE_LAST || parse == PARSE_DUPLEX )

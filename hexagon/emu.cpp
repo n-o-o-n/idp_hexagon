@@ -79,10 +79,11 @@ static void handle_insn( const insn_t &insn, uint32_t itype, uint32_t flags, con
     switch( itype )
     {
     case Hex_allocframe:
-        // trace modification of SP register
-        // TODO: the actual SP change happens at the end of packet
-        if( pfn && may_trace_sp() )
-            add_auto_stkpnt( pfn, insn.ea + insn.size, -(ops[0].value + 8) );
+        // add SP change point
+        // NB: compiler sometimes creates spurious allocframe(#0); deallocframe
+        //     so we'll just ignore them
+        if( ops[0].value != 0 && pfn && may_trace_sp() )
+            add_auto_stkpnt( pfn, packet_end( insn ), -(ops[0].value + 8) );
         break;
 
     case Hex_add:
@@ -98,8 +99,8 @@ static void handle_insn( const insn_t &insn, uint32_t itype, uint32_t flags, con
         if( ops[0].is_reg( REG_SP ) && ops[1].is_reg( REG_SP ) &&
             pfn && may_trace_sp() )
         {
-            // trace modification of SP register
-            add_auto_stkpnt( pfn, insn.ea + insn.size, ops[2].value );
+            // add SP change point for sp = add(sp, #I)
+            add_auto_stkpnt( pfn, packet_end( insn ), ops[2].value );
         }
         if( ops[1].is_reg( REG_PC ) &&
             !is_defarg( F, ops[2].n ) && !is_off( F, ops[2].n ) )
@@ -144,10 +145,11 @@ static void handle_operand( const insn_t &insn, const op_t &op )
         {
             // make a stack variable for memX({sp|fp} + #I)
             // NB: for vmem() the offset is in vector size units
-            bool created = op.dtype == dt_byte64?
-                insn.create_stkvar( op, op.addr * 128, 0 ) :
-                insn.create_stkvar( op, op.addr, STKVAR_VALID_SIZE );
-            if( created ) op_stkvar( insn.ea, op.n );
+            // unfortunately it produces wrong stack reference
+            if( op.dtype == dt_byte64 )
+                define_stkvar( get_func( insn.ea ), NULL, -(int)op.addr * 128, byte_flag(), NULL, 128 );
+            else if( insn.create_stkvar( op, op.addr, STKVAR_VALID_SIZE ) )
+                op_stkvar( insn.ea, op.n );
         }
         break;
 
@@ -286,6 +288,12 @@ void hex_create_func_frame( func_t *pfn )
 
         ea += insn.size;
     }
+}
+
+int hex_get_frame_retsize( const func_t &/*pfn*/ )
+{
+    // the return address is in LR, don't allocate stack for it
+    return 0;
 }
 
 int hex_is_sp_based( const insn_t &/*insn*/, const op_t &op )

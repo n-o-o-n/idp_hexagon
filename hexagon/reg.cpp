@@ -162,6 +162,12 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
         hex_create_func_frame( va_arg( va, func_t* ) );
         return 1;
     }
+    case processor_t::ev_get_frame_retsize: {
+        auto frsize = va_arg( va, int* );
+        auto pfn = va_arg( va, const func_t* );
+        *frsize = hex_get_frame_retsize( *pfn );
+        return 1;
+    }
     case processor_t::ev_is_sp_based: {
         auto mode = va_arg( va, int* );
         auto insn = va_arg( va, const insn_t* );

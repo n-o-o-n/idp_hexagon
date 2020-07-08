@@ -142,6 +142,8 @@ enum {
     INSN_ENDLOOP0   = (1 << 6),         // inner loop end
     INSN_ENDLOOP1   = (1 << 7),         // outer loop end
     INSN_ENDLOOP01  = INSN_ENDLOOP0 | INSN_ENDLOOP1,
+#define INSN_BEG_OFF(o) (((o) & 3) << 8)  // offset from packet start in words (0..3)
+#define INSN_END_OFF(o) (((o) & 3) << 10) // offset from packet end in words (0..3)
 
     // all other flags are stored in .auxpref_u16[*] and .segpref/.insnpref
     // instruction predicates
@@ -254,6 +256,19 @@ static __inline uint32_t get_op_index( uint32_t flags )
     uint32_t pred = flags & PRED_MASK;
     return pred == PRED_NONE? 0 :
            pred == PRED_REG?  1 : 2;
+}
+
+static __inline ea_t packet_start( const insn_t &insn )
+{
+    // returns start address of instruction's packet
+    return insn.ea - ((insn.flags >> 8) & 3) * 4;
+}
+
+static __inline ea_t packet_end( const insn_t &insn )
+{
+    // returns end address of instruction's packet, i.e.
+    // address of the next packet
+    return insn.ea + (((insn.flags >> 10) & 3) + 1) * 4;
 }
 
 /*

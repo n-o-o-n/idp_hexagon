@@ -39,12 +39,12 @@ Otherwise IDA would still sucessfully load binary, but will complain about unkno
 
 Issues
 ------
- * Switches are not recognized yet
- * In case of mixed code and data the former may have incorrect packet boundaries
- * Some rare relocation types are not properly recognized
- * Does not distinguish between different Hexagon versions; will disassemble instructions not supported by a particular version
+ * Switches are not recognized yet.
+ * In case of mixed code and data the former may have incorrect packet boundaries.
+ * Some rare relocation types are not properly recognized.
+ * Does not distinguish between different Hexagon versions; will disassemble instructions not supported by a particular version.
  * IDA stores flags for two operands only, and all subsequent operands will have the same flag. For example, if the 2nd operand is an offset, then 4th will be treated as offset too.
- * Xref to a stack variable fails; IDA checks if an instruction modifies operand by reading from processor_t::instruc (which is NULL)
+ * Xref to a stack variable fails; IDA checks if an instruction modifies operand by reading from processor_t::instruc (which is NULL).
 
 
 Other Hexagon Processor modules
@@ -69,4 +69,5 @@ History
 2020-06-29 version 1.0  
 2020-06-30 added support for FP-based stack vars  
 2020-07-01 added basic support for type information; fixed warning message in IDA 7.2 ("Bad declaration..."); symbol, string and relocation tables are now shown for .so binaries  
-2020-07-02 added function arguments locations
+2020-07-02 added function arguments locations  
+2020-07-10 trace SP modification at the end of a packet  

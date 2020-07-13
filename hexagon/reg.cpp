@@ -214,6 +214,20 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
         auto cc = va_arg( va, cm_t );
         return hex_calc_retloc( cc, *rettype, *retloc )? 1 : -1;
     }
+    case processor_t::ev_use_arg_types: {
+        auto ea = va_arg( va, ea_t );
+        auto fti = va_arg( va, func_type_data_t* );
+        auto rargs = va_arg( va, funcargvec_t* );
+        hex_use_arg_types( ea, *fti, *rargs );
+        return 1;
+    }
+    case processor_t::ev_use_regarg_type: {
+        auto idx = va_arg( va, int* );
+        auto ea = va_arg( va, ea_t );
+        auto rargs = va_arg( va, const funcargvec_t* );
+        *idx = hex_use_regarg_type( ea, *rargs );
+        return 1;
+    }
     case processor_t::ev_max_ptr_size:
         return inf.cc.size_l;
     case processor_t::ev_get_default_enum_size:
@@ -313,7 +327,7 @@ processor_t LPH = {
     PR_DEFSEG32 |           // segments are 32-bit by default
     PRN_HEX |               // default number representation: == hex
     PR_TYPEINFO |           // support the type system notifications
-//    PR_USE_ARG_TYPES |      // use processor_t::ev_use_arg_types callback
+    PR_USE_ARG_TYPES |      // use processor_t::ev_use_arg_types callback
     PR_ALIGN,               // all data items should be aligned properly
                             // flag2:
     PR2_REALCVT |           // the module has 'realcvt' event implementation

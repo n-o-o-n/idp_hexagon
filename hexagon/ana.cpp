@@ -39,7 +39,7 @@ static ea_t s_pkt_start;
 // current instruction address
 static ea_t s_insn_ea;
 
-static ea_t find_packet_end( ea_t ea )
+ea_t find_packet_end( ea_t ea )
 {
     // scan instructions forward in order to find the packet end
     // packet can have max 4 words including the current one, and we don't check the last word

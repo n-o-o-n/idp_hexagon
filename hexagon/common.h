@@ -25,6 +25,7 @@ enum {
 
 uint32_t get_num_ops( uint32_t itype, uint32_t flags );
 const char *get_insn_template( uint32_t itype );
+ea_t find_packet_end( ea_t ea );
 ssize_t loader_elf_machine( linput_t *li, int machine_type, const char **p_procname, proc_def_t **p_pd );
 ssize_t ana( insn_t &insn );
 ssize_t emu( const insn_t &insn );
@@ -42,3 +43,5 @@ int hex_is_sp_based( const insn_t &insn, const op_t &op );
 void hex_get_cc_regs( cm_t cc, callregs_t &regs );
 bool hex_calc_retloc( cm_t cc, const tinfo_t &type, argloc_t &loc );
 bool hex_calc_arglocs( func_type_data_t &fti );
+void hex_use_arg_types( ea_t ea, func_type_data_t &fti, funcargvec_t &rargs );
+int hex_use_regarg_type( ea_t ea, const funcargvec_t &rargs );

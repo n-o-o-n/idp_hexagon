@@ -71,3 +71,4 @@ History
 2020-07-01 added basic support for type information; fixed warning message in IDA 7.2 ("Bad declaration..."); symbol, string and relocation tables are now shown for .so binaries  
 2020-07-02 added function arguments locations  
 2020-07-10 trace SP modification at the end of a packet  
+2020-07-13 added automatic comments for function arguments  

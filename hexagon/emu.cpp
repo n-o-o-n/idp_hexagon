@@ -82,7 +82,9 @@ static void handle_insn( const insn_t &insn, uint32_t itype, uint32_t flags, con
         // add SP change point
         // NB: compiler sometimes creates spurious allocframe(#0); deallocframe
         //     so we'll just ignore them
-        if( ops[0].value != 0 && pfn && may_trace_sp() )
+        if( ops[0].value == 0 && get_dword( insn.ea + insn.size ) == 0x901EC01E )
+            break;
+        if( pfn && may_trace_sp() )
             add_auto_stkpnt( pfn, packet_end( insn ), -(ops[0].value + 8) );
         break;
 
@@ -351,10 +353,9 @@ bool hex_calc_arglocs( func_type_data_t &fti )
         return false;
 
     uint32_t reg = 0, stk_sz = 0, align;
-    // update registers/stack consumed by return value
-    size_t size = (fti.rettype.get_size() + 3) >> 2;
-    if( size <= 2 ) reg = size;
-    else stk_sz = fti.rettype.get_size();
+    // update stack size consumed by return value
+    size_t size = fti.rettype.get_size();
+    if( size > 8 ) stk_sz = size;
 
     // fill the arguments locations
     for( size_t i = 0; i < fti.size(); i++ )
@@ -385,4 +386,102 @@ bool hex_calc_arglocs( func_type_data_t &fti )
     // update total size of stack arguments
     fti.stkargs = stk_sz;
     return true;
+}
+
+static bool insn_modifies_op0( uint32_t itype )
+{
+    // returns true if instruction writes to %0
+    // NB: regenerate if instructions or their order changes!
+    static uint32_t mod[] = {
+        0xfffffffe, 0xbf7fffff, 0xffffffff, 0x000539c1, 0x022d0808, 0xf1c004c0, 0xffffffff, 0xffffffff,
+        0xffffffff, 0xffffffff, 0xffffffff, 0xfffcffff, 0xff3fffff, 0x001fc1ff,
+    };
+    assert( itype < _countof(mod) * 32 );
+    return (mod[ itype >> 5 ] >> (itype & 31)) & 1;
+}
+
+static bool _spoils( uint32_t itype, uint32_t flags, const op_t *ops, uint32_t reg1, uint32_t reg2 )
+{
+    if( !insn_modifies_op0( itype ) )
+        return false;
+
+    const op_t &op = ops[ get_op_index( flags ) + 0 ];
+    return op.type == o_reg && (
+           (reg_op_flags( op ) & REG_DOUBLE) && op.reg == reg1 && reg2 == reg1 + 1 ||
+           op.reg == reg1 ||
+           op.reg == reg2 );
+}
+
+// hack to skip our target function call
+static ea_t s_call_ea = BADADDR;
+
+static int spoils( const insn_t &insn, uint32_t reg1, uint32_t reg2 = ~0u )
+{
+    // checks if instruction modifies either reg1 or reg2
+    // returns: 0 - doesn't; 1 - does; 2 - modifies all registers (i.e. function call)
+    if( insn.ea != s_call_ea &&
+        (insn.itype == Hex_call || insn.itype == Hex_callr) &&
+       (insn_flags( insn ) & PRED_MASK) == 0 )
+       return 2;
+
+    return visit_sub_insn( insn, _spoils, reg1, reg2 )? 1 : 0;
+}
+
+static bool idaapi set_op_type( const insn_t &/*insn*/, const op_t &/*op*/, const tinfo_t &/*type*/, const char* /*name*/ )
+{
+    // called only for instructions that pass is_stkarg_write() test;
+    // 'op' is insn.ops[src]; return value is ignored
+    return false; // VERY simplified version :)
+}
+
+static bool _is_stkarg_write( uint32_t itype, uint32_t flags, const op_t *ops, int *src, int *dst )
+{
+    ops += get_op_index( flags );
+    if( itype != Hex_mov || ops[0].type != o_displ ||
+        ops[0].reg != REG_SP && ops[0].reg != REG_FP )
+        return false;
+
+    *src = ops[1].n;
+    *dst = ops[0].n;
+    return true;
+}
+
+static bool idaapi is_stkarg_write( const insn_t &insn, int *src, int *dst )
+{
+    // returns true if instruction writes to stack
+    return visit_sub_insn( insn, _is_stkarg_write, src, dst );
+}
+
+void hex_use_arg_types( ea_t ea, func_type_data_t &fti, funcargvec_t &rargs )
+{
+    s_call_ea = ea;
+    // set ea to the end of the packet
+    ea = find_packet_end( ea ) + 4;
+    gen_use_arg_tinfos(
+        ea, &fti, &rargs,
+        &set_op_type,
+        &is_stkarg_write,
+        NULL
+    );
+}
+
+int hex_use_regarg_type( ea_t ea, const funcargvec_t &rargs )
+{
+    // allows IDA to put comments where the corresponding arguments are written in registers
+    // NB: unfortunately this doesn't work when 2 or more registers are changed by a single instruction
+    insn_t insn;
+
+    if( !decode_insn( &insn, ea ) ) return -1;
+    for( size_t i = 0; i < rargs.size(); i++ )
+    {
+        const argloc_t &loc = rargs[i].argloc;
+        if( !loc.is_reg() ) continue;
+        int status = spoils( insn, loc.reg1(), loc.is_reg1()? ~0u : loc.reg2() );
+        // doesn't spoil?
+        if( status == 0 ) continue;
+        // spoils all regs?
+        if( status == 2 ) return -2;
+        return i;
+    }
+    return -1;
 }

@@ -31,6 +31,7 @@ ssize_t ana( insn_t &insn );
 ssize_t emu( const insn_t &insn );
 bool hex_is_call_insn( const insn_t &insn );
 bool hex_is_ret_insn( const insn_t &insn, bool strict );
+ssize_t hex_may_be_func( const insn_t &insn, int state );
 ssize_t hex_is_align_insn( ea_t ea );
 bool hex_is_jump_func( func_t &pfn, ea_t *jump_target, ea_t *func_pointer );
 void out_header( outctx_t &ctx );

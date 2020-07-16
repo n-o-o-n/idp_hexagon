@@ -6,6 +6,8 @@
 ------------------------------------------------------------------------------*/
 #include "common.h"
 
+static bool hex_is_switch( const insn_t &insn, switch_info_t *si );
+
 template <typename Visitor, typename ...Args>
 static __inline bool visit_sub_insn( const insn_t &insn, Visitor visitor, Args... args )
 {
@@ -111,6 +113,35 @@ static void handle_insn( const insn_t &insn, uint32_t itype, uint32_t flags, con
             op_offset( insn.ea, ops[2].n, REF_OFF32|REFINFO_NOBASE, ops[2].value );
         }
         break;
+
+    case Hex_jumpr:
+        if( (flags & PRED_MASK) == 0 && !ops[0].is_reg( REG_LR ) )
+        {
+            switch_info_t si;
+            if( hex_is_switch( insn, &si ) )
+            {
+                set_switch_info( insn.ea, si );
+                create_switch_table( insn.ea, si );
+                create_switch_xrefs( insn.ea, si );
+            }
+        }
+    }
+}
+
+static void create_stack_spill_vars( func_t *pfn, ea_t target )
+{
+    // checks if address corresponds to one of the stack spilling functions
+    // and create variables for registers saved on stack
+    qstring str;
+    if( !pfn || get_name( &str, target ) <= 0 ) return;
+    int end;
+    if( qsscanf( str.begin(), "__save_r16_through_r%d", &end ) && end >= 17 && end <= 27 && (end & 1) == 1 )
+    {
+        for( int r = 16; r <= end; r++ )
+        {
+            str.sprnt( "saved_r%d", r );
+            define_stkvar( pfn, str.begin(), -4 - (r - 16) * 4, dword_flag(), NULL, 4 );
+        }
     }
 }
 
@@ -123,6 +154,8 @@ static void handle_operand( const insn_t &insn, const op_t &op )
     {
     case o_near:
         add_cref( insn.ea, op.addr, insn.itype == Hex_call? fl_CN : fl_JN );
+        if( insn.itype == Hex_call && may_create_stkvars() )
+            create_stack_spill_vars( get_func( insn.ea ), op.addr );
         break;
 
     case o_mem:         // memXX(##u32)
@@ -217,6 +250,35 @@ static bool is_return( uint32_t itype, uint32_t /*flags*/, const op_t *ops, bool
 bool hex_is_ret_insn( const insn_t &insn, bool strict )
 {
     return visit_sub_insn( insn, is_return, strict );
+}
+
+static __inline bool is_allocframe( const insn_t &insn )
+{
+    return (insn.flags & INSN_DUPLEX)?
+        sub_insn_code( insn, 0 ) == Hex_allocframe ||
+        sub_insn_code( insn, 1 ) == Hex_allocframe :
+        insn.itype == Hex_allocframe;
+}
+
+ssize_t hex_may_be_func( const insn_t &insn, int /*state*/ )
+{
+    // start of packet?
+    if( !(insn.flags & INSN_PKT_BEG) )
+        return 0;
+    // packet contains allocframe?
+    if( is_allocframe( insn ) ) return 100;
+    if( (insn.flags & INSN_PKT_END) == 0 )
+    {
+        ea_t ea = insn.ea + insn.size;
+        insn_t temp;
+        do
+        {
+            if( !decode_insn( &temp, ea ) ) break;
+            if( is_allocframe( temp ) ) return 100;
+            ea += temp.size;
+        } while( !(temp.flags & INSN_PKT_END) );
+    }
+    return 0;
 }
 
 ssize_t hex_is_align_insn( ea_t ea )
@@ -484,4 +546,440 @@ int hex_use_regarg_type( ea_t ea, const funcargvec_t &rargs )
         return i;
     }
     return -1;
+}
+
+//
+// switch support
+//
+
+/*
+   if (p0.new) jump:nt default
+4c p0 = cmp.gtu(rI, #N)
+   -------------------------
+4c p0 = cmp.gtu(rI, #N)
+   if (p0) jump[:nt] default
+   -------------------------
+4b p0 = cmp.gtu(rI, #N); if (p0.new) jump:nt default
+   -------------------------
+4a if (cmp.gtu(rI.new, #N)) jump:t default
+3  rT = add(pc, ##table@pcrel)
+2  rB = memw(rT + rI<<#2)
+1  rA = add(rB, rT)
+0  jumpr rA
+
+   dependency graph:
+   0 -> 1 -> 2 -> 3
+          -> 3
+               -> 4
+*/
+
+// unfortunately the jump_pattern_t API has changed between IDA versions
+#if IDA_SDK_VERSION == 700
+
+#undef JUMP_DEBUG
+#include "../jptcmn.cpp"
+
+struct hex_jump_pattern_t : public jump_pattern_t
+{
+    hex_jump_pattern_t( switch_info_t *_si ) : jump_pattern_t( _si, s_roots, s_depends )
+    {
+        allow_noflows = false;
+    }
+    enum { rA, rB, rT, rI, rP };
+    static constexpr char s_roots[] = { 1, 0 };
+    static constexpr char s_depends[][2] = {
+        { 1 },        // 0
+        { 2, 3 },     // 1
+        { 3, 4 },     // 2
+        { 0 },        // 3
+        { 0 },        // 4
+    };
+    virtual bool jpi4( void );
+    virtual bool jpi3( void );
+    virtual bool jpi2( void );
+    virtual bool jpi1( void );
+    virtual bool jpi0( void );
+    virtual bool handle_mov( void );
+    bool mov_set( uint32_t reg, const op_t &op );
+    bool mov_unset( const op_t &op, uint32_t reg );
+};
+
+bool hex_jump_pattern_t::jpi4( void )
+{
+    // (a) if (cmp.gtu(rI.new, #N)) jump:t default
+    if( insn.itype == Hex_jump &&
+        (insn_flags( insn ) & PRED_MASK) == PRED_GTU &&
+        insn.ops[0].is_reg( r[rI] ) &&
+        insn.ops[1].type == o_imm )
+    {
+        si->ncases = insn.ops[1].value + 1;
+        si->defjump = insn.ops[2].addr;
+        return true;
+    }
+    // (b) p0 = cmp.gtu(rI, #N); if (p0.new) jump:nt default
+    if( insn.itype == Hex_cmp_jump &&
+        (insn_flags( insn ) & CMP_MASK) == CMP_GTU &&
+        insn.ops[1].is_reg( r[rI] ) &&
+        insn.ops[2].type == o_imm )
+    {
+        si->ncases = insn.ops[2].value + 1;
+        si->defjump = insn.ops[4].addr;
+        return true;
+    }
+    // (c) p0 = cmp.gtu(rI, #N)
+    if( insn.itype == Hex_cmp &&
+        (insn_flags( insn ) & CMP_MASK) == CMP_GTU &&
+        insn.ops[1].is_reg( r[rI] ) &&
+        insn.ops[2].type == o_imm )
+    {
+        r[rP] = insn.ops[0].reg;
+        si->ncases = insn.ops[2].value + 1;
+        // search for the default jump
+        ea_t ea = packet_start( insn ), end = eas[3];
+        insn_t temp;
+        while( ea < end && decode_insn( &temp, ea ) )
+        {
+            if( temp.itype == Hex_jump &&
+                (insn_flags( temp ) & PRED_MASK) == PRED_REG &&
+                temp.ops[0].is_reg( r[rP] ) &&
+                ((reg_op_flags( temp.ops[0] ) & REG_POST_NEW) != 0) ^ (temp.ea >= packet_end( insn )) )
+            {
+                si->defjump = insn.ops[1].addr;
+                break;
+            }
+            ea += temp.size;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool hex_jump_pattern_t::jpi3( void )
+{
+    // rT = add(pc, ##table@pcrel)
+    if( (insn_flags( insn ) & PRED_MASK) == 0 &&
+        insn.itype == Hex_add &&
+        insn.ops[0].is_reg( r[rT] ) &&
+        insn.ops[1].is_reg( REG_PC ) &&
+        insn.ops[2].type == o_imm )
+    {
+        si->jumps = insn.ops[2].value;
+        si->elbase = si->jumps;
+        si->flags |= SWI_ELBASE;
+        return true;
+    }
+    return false;
+}
+
+bool hex_jump_pattern_t::jpi2( void )
+{
+    // rB = memw(rT + rI<<#2)
+    if( (insn_flags( insn ) & PRED_MASK) == 0 &&
+        insn.itype == Hex_mov &&
+        insn.ops[0].is_reg( r[rB] ) &&
+        insn.ops[1].type == o_mem_ind_off &&
+        (insn.ops[1].reg >> 8) == r[rT] &&
+        insn.ops[1].value == 2 )
+    {
+        r[rI] = insn.ops[1].reg & 0xFF;
+        // jump table contains dwords
+        si->set_jtable_element_size( 4 );
+        return true;
+    }
+    return false;
+}
+
+bool hex_jump_pattern_t::jpi1( void )
+{
+    // rA = add(rB, rT)
+    if( (insn_flags( insn ) & PRED_MASK) == 0 &&
+        insn.itype == Hex_add &&
+        insn.ops[0].is_reg( r[rA] ) &&
+        insn.ops[1].type == o_reg &&
+        insn.ops[2].type == o_reg )
+    {
+        r[rB] = insn.ops[1].reg;
+        r[rT] = insn.ops[2].reg;
+        return true;
+    }
+    return false;
+}
+
+bool hex_jump_pattern_t::jpi0( void )
+{
+    // jumpr rA
+    // we already checked conditions in handle_insn()
+    r[rA] = insn.ops[0].reg;
+    return true;
+}
+
+bool hex_jump_pattern_t::handle_mov( void )
+{
+    // track register movement
+    if( insn.itype != Hex_mov /*|| (insn_flags( insn ) & PRED_MASK)*/ )
+        return false;
+
+    // stack load?
+    const op_t *ops = insn.ops + get_op_index( insn_flags( insn ) );
+    if( ops[1].type == o_displ && ops[1].reg == REG_SP )
+        return mov_set( ops[0].reg, ops[1] );
+    // stack store?
+    else if( ops[0].type == o_displ && ops[0].reg == REG_SP &&
+             ops[1].type == o_reg )
+        return mov_unset( ops[0], ops[1].reg );
+
+    return false;
+}
+
+bool hex_jump_pattern_t::mov_set( uint32_t reg, const op_t &op )
+{
+    // fixed version of jump_pattern_t::mov_set()
+    bool found = false;
+    for( int i = 0; i < _countof(r); i++ )
+    {
+        if( r[i] == reg && !spoiled[i] )
+        {
+            r_moved[i] = op;
+            spoiled[i] = true;
+            found = true;
+        }
+    }
+    return found;
+}
+
+bool hex_jump_pattern_t::mov_unset( const op_t &op, uint32_t reg )
+{
+    // reverses the effect of mov_set()
+    bool found = false;
+    for( int i = 0; i < _countof(r_moved); i++ )
+    {
+        if( is_same( op, i ) )
+        {
+            r[i] = reg;
+            spoiled[i] = false;
+            found = true;
+        }
+    }
+    return found;
+}
+
+static jump_table_type_t is_jump_pattern( switch_info_t *si, const insn_t &insn )
+{
+    hex_jump_pattern_t jp( si );
+    return jp.match( insn )? JT_FLAT32 : JT_NONE;
+}
+
+#elif IDA_SDK_VERSION == 720
+
+#include "jumptable.hpp"
+
+/*
+   if (p0.new) jump:nt default
+4c p0 = cmp.gtu(rI, #N)
+   -------------------------
+4c p0 = cmp.gtu(rI, #N)
+   if (p0) jump[:nt] default
+   -------------------------
+4b p0 = cmp.gtu(rI, #N); if (p0.new) jump:nt default
+   -------------------------
+4a if (cmp.gtu(rI.new, #N)) jump:t default
+3  rT = add(pc, ##table@pcrel)
+2  rB = memw(rT + rI<<#2)
+1  rA = add(rB, rT)
+0  jumpr rA
+
+   dependency graph:
+   0 -> 1 -> 2 -> 3
+          -> 3
+               -> 4
+*/
+struct hex_jump_pattern_t : public jump_pattern_t
+{
+    hex_jump_pattern_t( switch_info_t *si ) : jump_pattern_t( si, s_depends, rI )
+    {
+        modifying_r32_spoils_r64 = false;
+        si->flags |= SWI_HXNOLOWCASE;
+    }
+    enum { rA, rB, rT, rI };
+    static constexpr char s_depends[][4] = {
+        { 1 },        // 0
+        { 2, 3 },     // 1
+        { 3, 4 },     // 2
+        { 0 },        // 3
+        { 0 },        // 4
+    };
+    virtual bool jpi4( void );
+    virtual bool jpi3( void );
+    virtual bool jpi2( void );
+    virtual bool jpi1( void );
+    virtual bool jpi0( void );
+    virtual bool handle_mov( tracked_regs_t &regs );
+    virtual bool equal_ops( const op_t &x, const op_t &y ) const;
+};
+
+bool hex_jump_pattern_t::jpi4( void )
+{
+    // (a) if (cmp.gtu(rI.new, #N)) jump:t default
+    if( insn.itype == Hex_jump &&
+        (insn_flags( insn ) & PRED_MASK) == PRED_GTU &&
+        is_equal( insn.ops[0], rI ) &&
+        insn.ops[1].type == o_imm )
+    {
+        si->ncases = insn.ops[1].value + 1;
+        si->defjump = insn.ops[2].addr;
+        return true;
+    }
+    // (b) p0 = cmp.gtu(rI, #N); if (p0.new) jump:nt default
+    if( insn.itype == Hex_cmp_jump &&
+        (insn_flags( insn ) & CMP_MASK) == CMP_GTU &&
+        is_equal( insn.ops[1], rI ) &&
+        insn.ops[2].type == o_imm )
+    {
+        si->ncases = insn.ops[2].value + 1;
+        si->defjump = insn.ops[4].addr;
+        return true;
+    }
+    // (c) p0 = cmp.gtu(rI, #N)
+    if( insn.itype == Hex_cmp &&
+        (insn_flags( insn ) & CMP_MASK) == CMP_GTU &&
+        is_equal( insn.ops[1], rI ) &&
+        insn.ops[2].type == o_imm )
+    {
+        const uint32_t rP = insn.ops[0].reg;
+        si->ncases = insn.ops[2].value + 1;
+        // search for the default jump
+        ea_t ea = packet_start( insn ), end = eas[3];
+        insn_t temp;
+        while( ea < end && decode_insn( &temp, ea ) )
+        {
+            if( temp.itype == Hex_jump &&
+                (insn_flags( temp ) & PRED_MASK) == PRED_REG &&
+                temp.ops[0].is_reg( rP ) &&
+                ((reg_op_flags( temp.ops[0] ) & REG_POST_NEW) != 0) ^ (temp.ea >= packet_end( insn )) )
+            {
+                si->defjump = insn.ops[1].addr;
+                break;
+            }
+            ea += temp.size;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool hex_jump_pattern_t::jpi3( void )
+{
+    // rT = add(pc, ##table@pcrel)
+    if( (insn_flags( insn ) & PRED_MASK) == 0 &&
+        insn.itype == Hex_add &&
+        is_equal( insn.ops[0], rT ) &&
+        insn.ops[1].is_reg( REG_PC ) &&
+        insn.ops[2].type == o_imm )
+    {
+        si->jumps = insn.ops[2].value;
+        si->elbase = si->jumps;
+        si->flags |= SWI_ELBASE;
+        return true;
+    }
+    return false;
+}
+
+bool hex_jump_pattern_t::jpi2( void )
+{
+    // rB = memw(rT + rI<<#2)
+    if( (insn_flags( insn ) & PRED_MASK) == 0 &&
+        insn.itype == Hex_mov &&
+        is_equal( insn.ops[0], rB ) &&
+        insn.ops[1].type == o_mem_ind_off &&
+        is_equal( insn.ops[1].reg >> 8, rT, dt_dword ) &&
+        insn.ops[1].value == 2 )
+    {
+        track( insn.ops[1].reg & 0xFF, rI, dt_dword );
+        // jump table contains dwords
+        si->set_jtable_element_size( 4 );
+        return true;
+    }
+    return false;
+}
+
+bool hex_jump_pattern_t::jpi1( void )
+{
+    // rA = add(rB, rT)
+    if( insn.itype == Hex_add &&
+        (insn_flags( insn ) & PRED_MASK) == 0 &&
+        is_equal( insn.ops[0], rA ) &&
+        insn.ops[1].type == o_reg &&
+        insn.ops[2].type == o_reg )
+    {
+        track( insn.ops[1].reg, rB, dt_dword );
+        track( insn.ops[2].reg, rT, dt_dword );
+        return true;
+    }
+    return false;
+}
+
+bool hex_jump_pattern_t::jpi0( void )
+{
+    // jumpr rA
+    if( insn.itype == Hex_jumpr &&
+        (insn_flags( insn ) & PRED_MASK) == 0 &&
+        !insn.ops[0].is_reg( REG_LR ) )
+    {
+        track( insn.ops[0].reg, rA, dt_dword );
+        return true;
+    }
+    return false;
+}
+
+bool hex_jump_pattern_t::handle_mov( tracked_regs_t &regs )
+{
+    // track register movement
+    if( insn.itype != Hex_mov ||
+        (insn_flags( insn ) & IAT_MASK) /*|| (insn_flags( insn ) & PRED_MASK)*/ )
+        return false;
+
+    // stack load or store?
+    const op_t *ops = insn.ops + get_op_index( insn_flags( insn ) );
+    return set_moved( ops[0], ops[1], regs );
+}
+
+bool hex_jump_pattern_t::equal_ops( const op_t &x, const op_t &y ) const
+{
+    if( x.type != y.type )
+        return false;
+    // ignore difference in the data size of registers
+    switch( x.type )
+    {
+    case o_void:
+        // consider spoiled values as not equal
+        return false;
+    case o_reg:
+        return x.reg == y.reg;
+    case o_displ:
+        return x.reg == y.reg && x.addr == y.addr;
+    case o_condjump:
+        // used in set_spoiled()
+        return x.addr == y.addr;
+    }
+    return false;
+}
+
+static int is_jump_pattern( switch_info_t *si, const insn_t &insn )
+{
+    hex_jump_pattern_t jp( si );
+    return jp.match( insn )? JT_SWITCH : JT_NONE;
+}
+
+#else
+#error Your SDK version is not supported...
+#endif
+
+static bool hex_is_switch( const insn_t &insn, switch_info_t *si )
+{
+    // note: ev_is_switch is called only for instructions with CF_JUMP set
+    // as we don't expose LPH.instruc, we must call it ourselves
+    static is_pattern_t *const patterns[] = {
+        is_jump_pattern,
+    };
+    return check_for_table_jump( si, insn, patterns, _countof(patterns) );
 }

@@ -22,7 +22,7 @@ Build SDK, the resulting binary will be in $SDK/bin/procs/hexagon.dll.
 
 Binary download
 ---------------
-Binaries for Windows can be found under [releases](https://github.com/n-o-o-n/idp_hexagon/releases)
+Binaries for Windows can be found under [releases](https://github.com/n-o-o-n/idp_hexagon/releases).
 
 
 Installation
@@ -39,7 +39,6 @@ Otherwise IDA would still sucessfully load binary, but will complain about unkno
 
 Issues
 ------
- * Switches are not recognized yet.
  * In case of mixed code and data the former may have incorrect packet boundaries.
  * Some rare relocation types are not properly recognized.
  * Does not distinguish between different Hexagon versions; will disassemble instructions not supported by a particular version.
@@ -72,3 +71,4 @@ History
 2020-07-02 added function arguments locations  
 2020-07-10 trace SP modification at the end of a packet  
 2020-07-13 added automatic comments for function arguments  
+2020-07-16 added switch support; version 2.0 released  

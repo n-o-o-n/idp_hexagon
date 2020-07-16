@@ -149,6 +149,11 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
         auto strict = va_argi( va, bool );
         return hex_is_ret_insn( *insn, strict )? 1 : -1;
     }
+    case processor_t::ev_may_be_func: {
+        auto insn = va_arg( va, const insn_t* );
+        auto state = va_arg( va, int );
+        return hex_may_be_func( *insn, state );
+    }
     case processor_t::ev_is_align_insn: {
         return hex_is_align_insn( va_arg( va, ea_t ) );
     }

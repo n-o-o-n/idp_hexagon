@@ -187,6 +187,7 @@ static void add_reg( op_t **ops, uint32_t reg, uint32_t flags = 0 )
     op->type = o_reg;
     op->reg = reg;
     op->specval = flags; // REG_XXX, REG_PRE_XXX, REG_POST_XXX
+    op->dtype = dt_dword;
     (*ops)++;
 }
 

@@ -579,12 +579,9 @@ int hex_use_regarg_type( ea_t ea, const funcargvec_t &rargs )
 #undef JUMP_DEBUG
 #include "../jptcmn.cpp"
 
+
 struct hex_jump_pattern_t : public jump_pattern_t
 {
-    hex_jump_pattern_t( switch_info_t *_si ) : jump_pattern_t( _si, s_roots, s_depends )
-    {
-        allow_noflows = false;
-    }
     enum { rA, rB, rT, rI, rP };
     static constexpr char s_roots[] = { 1, 0 };
     static constexpr char s_depends[][2] = {
@@ -594,6 +591,11 @@ struct hex_jump_pattern_t : public jump_pattern_t
         { 0 },        // 3
         { 0 },        // 4
     };
+
+    hex_jump_pattern_t( switch_info_t *_si ) : jump_pattern_t( _si, s_roots, s_depends )
+    {
+        allow_noflows = false;
+    }
     virtual bool jpi4( void );
     virtual bool jpi3( void );
     virtual bool jpi2( void );
@@ -793,13 +795,6 @@ static jump_table_type_t is_jump_pattern( switch_info_t *si, const insn_t &insn 
           -> 3
                -> 4
 */
-struct hex_jump_pattern_t : public jump_pattern_t
-{
-    hex_jump_pattern_t( switch_info_t *si ) : jump_pattern_t( si, s_depends, rI )
-    {
-        modifying_r32_spoils_r64 = false;
-        si->flags |= SWI_HXNOLOWCASE;
-    }
     enum { rA, rB, rT, rI };
     static constexpr char s_depends[][4] = {
         { 1 },        // 0
@@ -808,6 +803,14 @@ struct hex_jump_pattern_t : public jump_pattern_t
         { 0 },        // 3
         { 0 },        // 4
     };
+
+struct hex_jump_pattern_t : public jump_pattern_t
+{
+    hex_jump_pattern_t( switch_info_t *si ) : jump_pattern_t( si, s_depends, rI )
+    {
+        modifying_r32_spoils_r64 = false;
+        si->flags |= SWI_HXNOLOWCASE;
+    }
     virtual bool jpi4( void );
     virtual bool jpi3( void );
     virtual bool jpi2( void );

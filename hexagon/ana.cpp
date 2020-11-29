@@ -143,13 +143,15 @@ static uint32_t new_value( uint32_t nt, bool hvx = false )
             // avoid calling decode_insn()
             memset( &temp, 0, sizeof(temp) );
             temp.ea = ea;
-            if( !ana( temp ) ) goto __cleanup;
+            if( !ana( temp ) ) {s_pkt_start = saved_pkt_start, s_insn_ea = saved_ea;
+    return result;}
             // skip scalars when calculating distances for vectors
             if( hvx && !is_hvx( temp ) ) ++offset;
         }
         if( --offset == 0 ) break;
         // couldn't find producer?
-        if( ea <= saved_pkt_start ) goto __cleanup;
+        if( ea <= saved_pkt_start ) {s_pkt_start = saved_pkt_start, s_insn_ea = saved_ea;
+    return result;}
     }
     // we got the producer, find out the operand
     // TODO: check if duplexes have to be supported
@@ -170,7 +172,6 @@ static uint32_t new_value( uint32_t nt, bool hvx = false )
             result = temp.ops[i + (nt & 1)].reg;
     }
 
-__cleanup:
     // restore globals
     s_pkt_start = saved_pkt_start, s_insn_ea = saved_ea;
     return result;

@@ -147,6 +147,7 @@ static const char* proc_relocation(
     // msg( "rel @0x%X: type=%2d, Sadd=0x%X, S=0x%X, sym=%s\n",
     //      rel_data.P, rel_data.type, rel_data.Sadd, rel_data.S, symbol->original_name );
     fixup_type_t ftype = FIXUP_OFF32;
+    fixup_data_t fd( ftype );
 
     // simple cases
     switch( rel_data.type )
@@ -157,19 +158,27 @@ static const char* proc_relocation(
     case R_HEX_JMP_SLOT:
     case R_HEX_RELATIVE:
         put_dword( rel_data.P, rel_data.Sadd );
-        goto __fixup;
+        fd.off = rel_data.Sadd;
+        fd.set( rel_data.P );
+        return NULL; // ok
     case R_HEX_16:
         put_word( rel_data.P, rel_data.Sadd );
-        goto __fixup;
+        fd.off = rel_data.Sadd;
+        fd.set( rel_data.P );
+        return NULL; // ok
     case R_HEX_8:
         put_byte( rel_data.P, rel_data.Sadd );
-        goto __fixup;
+        fd.off = rel_data.Sadd;
+        fd.set( rel_data.P );
+        return NULL; // ok
     case R_HEX_HL16:
         put_dword( rel_data.P, get_dword( rel_data.P ) |
                    apply_mask( rel_data.Sadd >> 16, LO_MASK ) );
         put_dword( rel_data.P + 4, get_dword( rel_data.P + 4 ) |
                    apply_mask( rel_data.Sadd, LO_MASK ) );
-        goto __fixup;
+        fd.off = rel_data.Sadd;
+        fd.set( rel_data.P );
+        return NULL; // ok
     }
 
     // word32 masked relocs
@@ -293,9 +302,7 @@ static const char* proc_relocation(
     word |= apply_mask( value, mask );
     put_dword( rel_data.P, word );
 
-__fixup:
     // add a fixup
-    fixup_data_t fd( ftype );
     fd.off = rel_data.Sadd;
     fd.set( rel_data.P );
     return NULL; // ok

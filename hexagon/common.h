@@ -11,6 +11,7 @@
 #include "ieee.h"
 #include "typeinf.hpp"
 #include "ins.h"
+#define _countof(a) (sizeof(a)/sizeof(*(a)))
 
 #define IN_RANGE(u,lo,hi)           (uint32_t((u) - (lo)) <= ((hi) - (lo)))
 

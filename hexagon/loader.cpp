@@ -318,10 +318,13 @@ static const char* proc_dynamic_tag( reader_t &/*reader*/, const Elf64_Dyn *dyn 
     return NULL;
 }
 
+/*
 static proc_def_t hexagon_proc = {
     0,
     proc_relocation,            // must be implemented
+    NULL,                       // proc_bug_got
     NULL,                       // proc_patch,
+    NULL,                       // proc_pic_got
     proc_flag,
     NULL,                       // stubname
     NULL,                       // proc_sec_ext
@@ -333,10 +336,7 @@ static proc_def_t hexagon_proc = {
     NULL,                       // proc_sym_init,
     NULL,                       // proc_sym_handle,
     0,                          // patch_mode (set by IDA)
-    0,                          // r_drop
     0,                          // r_gotset
-    R_HEX_JMP_SLOT,             // r_err
-    R_HEX_GLOB_DAT,             // r_chk
     { 0 },                      // relsyms (what do we put here?)
     NULL,                       // proc_sect_check
     NULL,                       // proc_sect_handle
@@ -356,3 +356,4 @@ ssize_t loader_elf_machine( linput_t*, int machine_type, const char**, proc_def_
     *p_pd = &hexagon_proc;
     return machine_type;
 }
+*/

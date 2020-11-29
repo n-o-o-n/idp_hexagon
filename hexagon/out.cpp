@@ -20,15 +20,15 @@ void out_header( outctx_t &ctx )
 }
 
 // generate footer
-void out_footer( outctx_t &ctx )
+void idaapi hex_t::out_footer( outctx_t &ctx )
 {
-    qstring nbuf = get_colored_name( inf.start_ea );
+    qstring nbuf = get_colored_name( inf_get_start_ea() );
     const char *name = nbuf.c_str();
     const char *end = ash.end;
     if ( end == NULL )
-        ctx.gen_printf( inf.indent, COLSTR("%s end %s",SCOLOR_AUTOCMT), ash.cmnt, name );
+        ctx.gen_printf( DEFAULT_INDENT, COLSTR("%s end %s",SCOLOR_AUTOCMT), ash.cmnt, name );
     else
-        ctx.gen_printf( inf.indent,
+        ctx.gen_printf( DEFAULT_INDENT,
             COLSTR("%s",SCOLOR_ASMDIR) " " COLSTR("%s %s",SCOLOR_AUTOCMT),
             ash.end, ash.cmnt, name );
 }
@@ -213,6 +213,7 @@ ssize_t out_operand( outctx_t &ctx, const op_t &op )
 {
     uint32_t flags;
     ea_t ea;
+    //hex_t &pm = *static_cast<hex_t *>(procmod);
 
     // memory accesses
     if( op.type == o_mem || op.type == o_displ ||
@@ -366,6 +367,7 @@ static uint32_t hex_out_predicate( outctx_t &ctx, uint32_t ptype, uint32_t op_id
 
 static uint32_t hex_out_insn( outctx_t &ctx, uint32_t itype, uint32_t flags, uint32_t op_idx )
 {
+    //hex_t &pm = *static_cast<hex_t *>(procmod);
     // output predicate
     if( (flags & PRED_MASK) != PRED_NONE )
         op_idx = hex_out_predicate( ctx, flags & PRED_MASK, op_idx );

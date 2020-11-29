@@ -5,11 +5,12 @@
 
 ------------------------------------------------------------------------------*/
 #include "common.h"
-
+int data_id;
 // configuration flags
+netnode helper;
 uint16_t idpflags = HEX_BRACES_FOR_SINGLE | HEX_CR_FOR_DUPLEX;
 
-static const char* set_idp_options( const char *keyword, int value_type, const void *value )
+const char* hex_t::set_idp_options( const char *keyword, int value_type, const void *value, bool idb_loaded)
 {
     if( !keyword )
     {
@@ -61,8 +62,10 @@ Hexagon specific options
 <~C~losing brace is left alone:C>
 <~U~se braces for single instructions:C>
 <~I~nsert CR inside duplex instructions:C>>
+<~C~hoose core variant:B:0::>
 )";
-        ask_form( form, &idpflags );
+        CASSERT(sizeof(idpflags) == sizeof(ushort));
+        ask_form( form, this, &idpflags);
         return IDPOPT_OK;
     }
     else
@@ -72,42 +75,54 @@ Hexagon specific options
         if( !strcmp( keyword, "HEX_OBRACE_ALONE" ) )
         {
             setflag( idpflags, HEX_OBRACE_ALONE, *(int*)value != 0 );
-            return IDPOPT_OK;
         }
         else if( !strcmp( keyword, "HEX_CBRACE_ALONE" ) )
         {
             setflag( idpflags, HEX_CBRACE_ALONE, *(int*)value != 0 );
-            return IDPOPT_OK;
         }
         else if( !strcmp( keyword, "HEX_BRACES_FOR_SINGLE" ) )
         {
             setflag( idpflags, HEX_BRACES_FOR_SINGLE, *(int*)value != 0 );
-            return IDPOPT_OK;
         }
         else if( !strcmp( keyword, "HEX_CR_FOR_DUPLEX" ) )
         {
             setflag( idpflags, HEX_CR_FOR_DUPLEX, *(int*)value != 0 );
-            return IDPOPT_OK;
         }
-        return IDPOPT_BADKEY;
+        else
+        {
+            return IDPOPT_BADKEY;
+        }
+        if (idb_loaded)
+            helper.altset(-1, idpflags);
+        return IDPOPT_OK;
     }
 }
 
-static ssize_t idaapi notify( void*, int notification_code, va_list va )
+// This old-style callback only returns the processor module object.
+static ssize_t idaapi notify(void *, int msgid, va_list)
 {
-    switch( notification_code )
+    if ( msgid == processor_t::ev_get_procmod )
+        return size_t(SET_MODULE_DATA(hex_t));
+    return 0;
+}
+
+ssize_t idaapi hex_t::on_event(ssize_t msgid, va_list va)
+{
+    switch( msgid )
     {
     case processor_t::ev_set_idp_options: {
         auto keyword = va_arg( va, const char* );
         auto value_type = va_arg( va, int );
         auto value = va_arg( va, const void* );
-        auto errbuf = va_arg( va, const char** );
-
-        const char *err = set_idp_options( keyword, value_type, value );
-        if( err == IDPOPT_OK ) return 1;
-        if( errbuf ) *errbuf = err;
+        const char **errmsg = va_arg(va, const char **);
+        bool idb_loaded = va_argi(va, bool);
+        const char *ret = set_idp_options(keyword, value_type, value, idb_loaded);
+        if( ret == IDPOPT_OK ) return 1;
+        if ( errmsg != NULL )
+            *errmsg = ret;
         return -1;
     }
+    /*
     case processor_t::ev_loader_elf_machine: {
         // note: this callback is called only if the user clicked "Set" button
         // in "Load a new file" dialog
@@ -117,37 +132,45 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
         auto p_pd = va_arg( va, proc_def_t** );
         return loader_elf_machine( li, machine_type, p_procname, p_pd );
     }
+    */
     case processor_t::ev_ana_insn: {
-        return ana( *va_arg( va, insn_t* ) );
+        insn_t *out = va_arg(va, insn_t *);
+        return ana(out);
     }
     case processor_t::ev_emu_insn: {
-        return emu( *va_arg( va, const insn_t* ) );
+        const insn_t *insn = va_arg(va, const insn_t *);
+        return emu(*insn) ? 1 : -1;
     }
     case processor_t::ev_out_header: {
-        out_header( *va_arg( va, outctx_t* ) );
-        break;
+        outctx_t *ctx = va_arg(va, outctx_t *);
+        out_header(*ctx);
+        return 1;
     }
     case processor_t::ev_out_footer: {
-        out_footer( *va_arg( va, outctx_t* ) );
-        break;
+        outctx_t *ctx = va_arg(va, outctx_t *);
+        out_footer(*ctx);
+        return 1;
     }
     case processor_t::ev_out_insn: {
-        out_insn( *va_arg( va, outctx_t* ) );
-        break;
+        outctx_t *ctx = va_arg(va, outctx_t *);
+        out_insn(*ctx);
+        return 1;
     }
     case processor_t::ev_out_operand: {
-        auto ctx = va_arg( va, outctx_t* );
-        auto op = va_arg( va, const op_t* );
-        return out_operand( *ctx, *op );
+        outctx_t *ctx = va_arg(va, outctx_t *);
+        const op_t *op = va_arg(va, const op_t *);
+        return out_operand(*ctx, *op) ? 1 : -1;
     }
     case processor_t::ev_is_call_insn: {
         return hex_is_call_insn( *va_arg( va, const insn_t* ) )? 1 : -1;
     }
     case processor_t::ev_is_ret_insn: {
         // not strictly necessary, everything works as is
-        auto insn = va_arg( va, const insn_t* );
+        const insn_t *insn = va_arg(va, insn_t *);
+//        bool strict = va_argi(va, bool);
         auto strict = va_argi( va, bool );
-        return hex_is_ret_insn( *insn, strict )? 1 : -1;
+        auto code = hex_is_ret_insn(*insn, strict) ? 1 : -1;
+        return code;
     }
     case processor_t::ev_may_be_func: {
         auto insn = va_arg( va, const insn_t* );
@@ -164,20 +187,21 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
         return hex_is_jump_func( *pfn, jump_target, func_pointer )? 1 : 0;
     }
     case processor_t::ev_create_func_frame: {
-        hex_create_func_frame( va_arg( va, func_t* ) );
+        func_t *pfn = va_arg(va, func_t *);
+        hex_create_func_frame(pfn);
         return 1;
     }
     case processor_t::ev_get_frame_retsize: {
-        auto frsize = va_arg( va, int* );
-        auto pfn = va_arg( va, const func_t* );
-        *frsize = hex_get_frame_retsize( *pfn );
+        int *frsize = va_arg(va, int *);
+        const func_t *pfn = va_arg(va, const func_t *);
+        *frsize = hex_get_frame_retsize(pfn);
         return 1;
     }
     case processor_t::ev_is_sp_based: {
-        auto mode = va_arg( va, int* );
-        auto insn = va_arg( va, const insn_t* );
-        auto op = va_arg( va, const op_t* );
-        *mode = hex_is_sp_based( *insn, *op );
+        int *mode = va_arg(va, int *);
+        const insn_t *insn = va_arg(va, const insn_t *);
+        const op_t *op = va_arg(va, const op_t *);
+        *mode = hex_is_sp_based(*insn, *op);
         return 1;
     }
     case processor_t::ev_realcvt: {
@@ -192,12 +216,12 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
     // type information callbacks
     //
     case processor_t::ev_decorate_name: {
-        auto outbuf = va_arg( va, qstring* );
-        auto name = va_arg( va, const char* );
-        auto mangle = va_argi( va, bool );
-        auto cc = va_argi( va, cm_t );
-        auto type = va_arg( va, tinfo_t* );
-        return gen_decorate_name( outbuf, name, mangle, cc, type );
+        qstring *outbuf  = va_arg(va, qstring *);
+        const char *name = va_arg(va, const char *);
+        bool mangle      = va_argi(va, bool);
+        cm_t cc          = va_argi(va, cm_t);
+        tinfo_t *type    = va_arg(va, tinfo_t *);
+        return gen_decorate_name(outbuf, name, mangle, cc, type) ? 1 : 0;
     }
     case processor_t::ev_get_cc_regs: {
         auto regs = va_arg( va, callregs_t* );
@@ -214,29 +238,29 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
         return hex_calc_arglocs( *fti )? 1 : -1;
     }
     case processor_t::ev_calc_retloc: {
-        auto retloc = va_arg( va, argloc_t* );
-        auto rettype = va_arg( va, const tinfo_t* );
-        auto cc = va_arg( va, cm_t );
-        return hex_calc_retloc( cc, *rettype, *retloc )? 1 : -1;
+        argloc_t *retloc    = va_arg(va, argloc_t *);
+        const tinfo_t *type = va_arg(va, const tinfo_t *);
+        cm_t cc             = va_argi(va, cm_t);
+        return hex_calc_retloc(retloc, *type, cc) ? 1 : -1;
     }
     case processor_t::ev_use_arg_types: {
-        auto ea = va_arg( va, ea_t );
-        auto fti = va_arg( va, func_type_data_t* );
-        auto rargs = va_arg( va, funcargvec_t* );
-        hex_use_arg_types( ea, *fti, *rargs );
+        ea_t ea               = va_arg(va, ea_t);
+        func_type_data_t *fti = va_arg(va, func_type_data_t *);
+        funcargvec_t *rargs   = va_arg(va, funcargvec_t *);
+        hex_use_arg_types(ea, fti,rargs);
         return 1;
     }
     case processor_t::ev_use_regarg_type: {
-        auto idx = va_arg( va, int* );
-        auto ea = va_arg( va, ea_t );
-        auto rargs = va_arg( va, const funcargvec_t* );
-        *idx = hex_use_regarg_type( ea, *rargs );
+        int *used                 = va_arg(va, int *);
+        ea_t ea                   = va_arg(va, ea_t);
+        const funcargvec_t *rargs = va_arg(va, const funcargvec_t *);
+        *used=hex_use_regarg_type(ea, *rargs);
         return 1;
     }
     case processor_t::ev_max_ptr_size:
-        return inf.cc.size_l;
+        return inf_get_cc_size_l();
     case processor_t::ev_get_default_enum_size:
-        return inf.cc.size_e;
+        return inf_get_cc_size_e();
     }
     // by default always return 0
     return 0;
@@ -350,8 +374,8 @@ processor_t LPH = {
     NULL,                   // regsiter names
     0,                      // number of registers
 
-    0,                      // index of first segment register
-    0,                      // index of last segment register
+    -1,                      // index of first segment register
+    -1,                      // index of last segment register
     0,                      // size of a segment register in bytes
     0, 0,                   // index of CS & DS registers
 
@@ -369,4 +393,5 @@ processor_t LPH = {
                             // normal double
                             // long double (0-does not exist)
     0,                      // Icode of return instruction (it's ok to give any of possible return instructions)
+    NULL,                         // Micro virtual machine description
 };

@@ -39,10 +39,10 @@ uint32_t _PLT_ = 0;
 uint32_t _MSG_BASE_ = 0;
 
 // process e_flags field of ELF header
-static const char* proc_flag( reader_t&, uint32 &e_flags )
+static const char* proc_describe_flag_bit( proc_def_t* /*self*/, uint32 *e_flags )
 {
     const char *opts = NULL;
-    switch( e_flags ) {
+    switch( *e_flags ) {
     case EF_HEXAGON_MACH_V4:   opts = "Hexagon V4"; break;
     case EF_HEXAGON_MACH_V5:   opts = "Hexagon V5"; break;
     case EF_HEXAGON_MACH_V55:  opts = "Hexagon V55"; break;
@@ -53,10 +53,11 @@ static const char* proc_flag( reader_t&, uint32 &e_flags )
     case EF_HEXAGON_MACH_V66:  opts = "Hexagon V66"; break;
     case EF_HEXAGON_MACH_V67:  opts = "Hexagon V67"; break;
     case EF_HEXAGON_MACH_V67T: opts = "Hexagon V67 Small Core"; break;
+    case EF_HEXAGON_MACH_V68:  opts = "Hexagon V68"; break;
     }
     // clear used flags to prevent infinite loop
-    if( opts ) e_flags = 0;
-    // TODO: use flags to limit instructions support
+    if( opts ) *e_flags = 0;
+    // TODO: use flags to limit instructions support based on CPU version
     return opts;
 }
 
@@ -136,8 +137,9 @@ static uint32_t apply_mask( uint32_t v, uint32_t mask )
 // 2) we process GOT/PLT relocations as if they were the normal ones,
 //    without creating any table entries
 //
-static const char* proc_relocation(
-    reader_t &/*reader*/,
+
+static const char* proc_handle_reloc(
+    proc_def_t* /*self*/,
     const rel_data_t &rel_data,
     const sym_rel *symbol,
     const elf_rela_t* /*reloc*/,
@@ -301,7 +303,7 @@ __fixup:
     return NULL; // ok
 }
 
-static const char* proc_dynamic_tag( reader_t &/*reader*/, const Elf64_Dyn *dyn )
+static const char* proc_handle_dynamic_tag( proc_def_t* /*self*/, const Elf64_Dyn *dyn )
 {
     switch( dyn->d_tag )
     {
@@ -311,20 +313,49 @@ static const char* proc_dynamic_tag( reader_t &/*reader*/, const Elf64_Dyn *dyn 
     return NULL;
 }
 
+#if IDA_SDK_VERSION < 750
+
+static const char* proc_flag( reader_t&, uint32 &e_flags )
+{
+    return proc_describe_flag_bit( NULL, &e_flags );
+}
+
+static const char* proc_relocation(
+    reader_t &/*reader*/,
+    const rel_data_t &rel_data,
+    const sym_rel *symbol,
+    const elf_rela_t *reloc,
+    reloc_tools_t *tools
+    )
+{
+    return proc_handle_reloc( NULL, rel_data, symbol, reloc, tools );
+}
+
+static const char* proc_dynamic_tag( reader_t &/*reader*/, const Elf64_Dyn *dyn )
+{
+    return proc_handle_dynamic_tag( NULL, dyn );
+}
+
 static proc_def_t hexagon_proc = {
     0,
-    proc_relocation,            // must be implemented
-    NULL,                       // proc_patch,
-    proc_flag,
+    proc_relocation,            // proc_rel, must be implemented
+#if IDA_SDK_VERSION < 730
+    NULL,                       // proc_patch
+#else
+    NULL,                       // proc_bug_got
+    NULL,                       // proc_patch
+    NULL,                       // proc_pic_got
+#endif
+    proc_flag,                  // proc_flag
     NULL,                       // stubname
     NULL,                       // proc_sec_ext
     NULL,                       // proc_sym_ext
     proc_dynamic_tag,           // proc_dyn_ext
-    NULL,                       // proc_file_ext,
-    NULL,                       // proc_start_ext,
-    NULL,                       // proc_post_process,
-    NULL,                       // proc_sym_init,
-    NULL,                       // proc_sym_handle,
+    NULL,                       // proc_file_ext
+    NULL,                       // proc_start_ext
+    NULL,                       // proc_post_process
+    NULL,                       // proc_sym_init
+    NULL,                       // proc_sym_handle
     0,                          // patch_mode (set by IDA)
     0,                          // r_drop
     0,                          // r_gotset
@@ -349,3 +380,24 @@ ssize_t loader_elf_machine( linput_t*, int machine_type, const char**, proc_def_
     *p_pd = &hexagon_proc;
     return machine_type;
 }
+
+#else
+
+ssize_t loader_elf_machine( linput_t*, int machine_type, const char**, proc_def_t **p_pd )
+{
+    // tell ELF loader to use our mini-plugin for processor-specific stuff
+    assert( machine_type == EM_QDSP6 );
+    // as proc_def_t's functions are not exported, there are two options:
+    // a) manually re-implement all missing functions
+    // b) replace vft in the existing proc_def_t object at *p_pd
+    // ****** WARNING: dirty hack ******:
+    static uintptr_t vft[21];
+    memcpy( vft, **(uintptr_t***)p_pd, sizeof(vft) );
+    vft[2] = (uintptr_t) proc_handle_reloc;
+    vft[7] = (uintptr_t) proc_describe_flag_bit;
+    **(uintptr_t***)p_pd = vft;
+
+    return machine_type;
+}
+
+#endif

@@ -454,7 +454,7 @@ static bool insn_modifies_op0( uint32_t itype )
 {
     // returns true if instruction writes to %0
     // NB: regenerate if instructions or their order changes!
-    static uint32_t mod[] = {
+    static const uint32_t mod[] = {
         0xfffffffe, 0xbf7fffff, 0xffffffff, 0x000539c1, 0x022d0808, 0xf1c004c0, 0xffffffff, 0xffffffff,
         0xffffffff, 0xffffffff, 0xffffffff, 0xfffcffff, 0xff3fffff, 0x001fc1ff,
     };
@@ -491,13 +491,14 @@ static int spoils( const insn_t &insn, uint32_t reg1, uint32_t reg2 = ~0u )
 
 static bool idaapi set_op_type( const insn_t &/*insn*/, const op_t &/*op*/, const tinfo_t &/*type*/, const char* /*name*/ )
 {
-    // called only for instructions that pass is_stkarg_write() test;
+    // called only for instructions that pass is_stkarg_load() test;
     // 'op' is insn.ops[src]; return value is ignored
     return false; // VERY simplified version :)
 }
 
 static bool _is_stkarg_write( uint32_t itype, uint32_t flags, const op_t *ops, int *src, int *dst )
 {
+    // memXX(sp+#Ii) = ... or memXX(fp+#Ii) = ...
     ops += get_op_index( flags );
     if( itype != Hex_mov || ops[0].type != o_displ ||
         ops[0].reg != REG_SP && ops[0].reg != REG_FP )
@@ -508,8 +509,10 @@ static bool _is_stkarg_write( uint32_t itype, uint32_t flags, const op_t *ops, i
     return true;
 }
 
-static bool idaapi is_stkarg_write( const insn_t &insn, int *src, int *dst )
+#if IDA_SDK_VERSION < 750
+static bool idaapi is_stkarg_load( const insn_t &insn, int *src, int *dst )
 {
+    // NB: function name is misleading
     // returns true if instruction writes to stack
     return visit_sub_insn( insn, _is_stkarg_write, src, dst );
 }
@@ -522,10 +525,45 @@ void hex_use_arg_types( ea_t ea, func_type_data_t &fti, funcargvec_t &rargs )
     gen_use_arg_tinfos(
         ea, &fti, &rargs,
         &set_op_type,
-        &is_stkarg_write,
+        &is_stkarg_load,
         NULL
     );
 }
+
+#else
+
+struct hex_argtinfo_helper_t : argtinfo_helper_t
+{
+    virtual bool idaapi set_op_tinfo(
+        const insn_t &insn,
+        const op_t &x,
+        const tinfo_t &tif,
+        const char *name ) override
+    {
+        return set_op_type( insn, x, tif, name );
+    }
+
+    virtual bool idaapi is_stkarg_load(
+        const insn_t &insn,
+        int *src,
+        int *dst ) override
+    {
+        // NB: function name is misleading
+        // returns true if instruction writes to stack
+        return visit_sub_insn( insn, _is_stkarg_write, src, dst );
+    }
+};
+
+void hex_use_arg_types( ea_t ea, func_type_data_t &fti, funcargvec_t &rargs )
+{
+    s_call_ea = ea;
+    // set ea to the end of the packet
+    ea = find_packet_end( ea ) + 4;
+    hex_argtinfo_helper_t hlp;
+    hlp.use_arg_tinfos( ea, &fti, &rargs );
+}
+
+#endif
 
 int hex_use_regarg_type( ea_t ea, const funcargvec_t &rargs )
 {
@@ -769,7 +807,7 @@ static jump_table_type_t is_jump_pattern( switch_info_t *si, const insn_t &insn 
     return jp.match( insn )? JT_FLAT32 : JT_NONE;
 }
 
-#elif IDA_SDK_VERSION == 720
+#elif IDA_SDK_VERSION >= 720
 
 #include "jumptable.hpp"
 
@@ -964,7 +1002,11 @@ bool hex_jump_pattern_t::equal_ops( const op_t &x, const op_t &y ) const
     return false;
 }
 
+#if IDA_SDK_VERSION < 750
 static int is_jump_pattern( switch_info_t *si, const insn_t &insn )
+#else
+static int is_jump_pattern( switch_info_t *si, const insn_t &insn, procmod_t* /*procmod*/ )
+#endif
 {
     hex_jump_pattern_t jp( si );
     return jp.match( insn )? JT_SWITCH : JT_NONE;

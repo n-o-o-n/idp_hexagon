@@ -234,9 +234,9 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
         return 1;
     }
     case processor_t::ev_max_ptr_size:
-        return inf.cc.size_l;
+        return inf_get_cc_size_l();
     case processor_t::ev_get_default_enum_size:
-        return inf.cc.size_e;
+        return inf_get_cc_size_e();
     }
     // by default always return 0
     return 0;
@@ -350,8 +350,8 @@ processor_t LPH = {
     NULL,                   // regsiter names
     0,                      // number of registers
 
-    0,                      // index of first segment register
-    0,                      // index of last segment register
+    -1,                     // index of first segment register
+    -1,                     // index of last segment register
     0,                      // size of a segment register in bytes
     0, 0,                   // index of CS & DS registers
 

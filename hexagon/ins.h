@@ -143,7 +143,7 @@ enum {
     INSN_ENDLOOP1   = (1 << 7),         // outer loop end
     INSN_ENDLOOP01  = INSN_ENDLOOP0 | INSN_ENDLOOP1,
 #define INSN_BEG_OFF(o) (((o) & 3) << 8)  // offset from packet start in words (0..3)
-#define INSN_END_OFF(o) (((o) & 3) << 10) // offset from packet end in words (0..3)
+#define INSN_END_OFF(o) (((o) & 3) << 10) // offset to packet end in words (0..3)
 
     // all other flags are stored in .auxpref_u16[*] and .segpref/.insnpref
     // instruction predicates
@@ -282,7 +282,8 @@ static __inline ea_t packet_end( const insn_t &insn )
   2) for some instructions the order of arguments is swapped to simplify
      parsing so that Rs=%1 and Rt=%2.
   3) for new_value() to work, always keep %0 as destination.
-  4) HVX instructions must be separate.
+  4) HVX instructions must be separate. We assume that instructions in the
+     range Hex_prefixsum ~ Hex_zextract are HVX.
 */
 enum {
     Hex_NONE = 0,

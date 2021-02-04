@@ -22,13 +22,16 @@ void out_header( outctx_t &ctx )
 // generate footer
 void out_footer( outctx_t &ctx )
 {
-    qstring nbuf = get_colored_name( inf.start_ea );
+    qstring nbuf = get_colored_name( inf_get_start_ea() );
     const char *name = nbuf.c_str();
+#if IDA_SDK_VERSION == 750
+    asm_t &ash = ctx.ash;
+#endif
     const char *end = ash.end;
     if ( end == NULL )
-        ctx.gen_printf( inf.indent, COLSTR("%s end %s",SCOLOR_AUTOCMT), ash.cmnt, name );
+        ctx.gen_printf( -1, COLSTR("%s end %s",SCOLOR_AUTOCMT), ash.cmnt, name );
     else
-        ctx.gen_printf( inf.indent,
+        ctx.gen_printf( -1,
             COLSTR("%s",SCOLOR_ASMDIR) " " COLSTR("%s %s",SCOLOR_AUTOCMT),
             ash.end, ash.cmnt, name );
 }
@@ -46,6 +49,7 @@ static const char *ctrl_rn[32] = {
 };
 
 // guest mode control registers (as in V67)
+// TODO: change according to CPU version
 static const char *guest_rn[32] = {
     /*  0 */ "gelr",       "gsr",        "gosp",       "gbadva",
     /*  4 */ "gcommit_1t", "gcommit_2t", "gcommit_3t", "gcommit_4t",

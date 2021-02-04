@@ -46,3 +46,10 @@ bool hex_calc_retloc( cm_t cc, const tinfo_t &type, argloc_t &loc );
 bool hex_calc_arglocs( func_type_data_t &fti );
 void hex_use_arg_types( ea_t ea, func_type_data_t &fti, funcargvec_t &rargs );
 int hex_use_regarg_type( ea_t ea, const funcargvec_t &rargs );
+
+// IDA compatibility stuff
+#if IDA_SDK_VERSION < 730
+static inline ea_t  inf_get_start_ea()  { return inf.start_ea; }
+static inline uchar inf_get_cc_size_l() { return inf.cc.size_l; }
+static inline uchar inf_get_cc_size_e() { return inf.cc.size_e; }
+#endif

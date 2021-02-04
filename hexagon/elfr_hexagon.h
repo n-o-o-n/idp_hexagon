@@ -120,6 +120,7 @@ enum
     EF_HEXAGON_MACH_V66       = 0x66,   // Hexagon V66
     EF_HEXAGON_MACH_V67       = 0x67,   // Hexagon V67
     EF_HEXAGON_MACH_V67T      = 0x8067, // Hexagon V67 Small Core (V67t)
+    EF_HEXAGON_MACH_V68       = 0x68,   // Hexagon V68
 
     // processor specific dynamic array tags
     DT_HEXAGON_SYMSZ          = 0x70000000,

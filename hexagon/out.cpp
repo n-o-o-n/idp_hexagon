@@ -162,7 +162,7 @@ static void hex_out_reg( outctx_t &ctx, uint32_t reg, uint32_t flags = 0 )
             ctx.out_printf( "q%u", reg - REG_Q0 );
         }
         else if( reg < REG_C0 ) {
-            static const char *rn[] = { "z", "vtmp" };
+            static const char *rn[] = { "z", "vtmp", "acc", "bias", "activation", "weight" };
             ctx.out_line( rn[ reg - REG_Z ] );
         }
         else if( reg < REG_G0 ) {
@@ -190,11 +190,13 @@ static void hex_out_reg( outctx_t &ctx, uint32_t reg, uint32_t flags = 0 )
     // register postfix
     if( (flags >> REG_POST_SHIFT) )
     {
-        const char *postfix[16] = {
-            NULL, ".new", ".cur", ".tmp", ".l", ".h", "*", ".b", ".h", ".w",
-            ".ub", ".uh", ".uw", ".n", ".c",
+        const char *postfix[] = {
+            "", ".new", ".cur", ".tmp", ".l", ".h", "*",
+            ".b", ".h", ".w", ".ub", ".uh", ".uw",
+            ".sf", ".hf", ".qf32", ".qf16",
+            ".n", ".c", ".sc", ".sm", ".ubit", ".sbit", ":2x1"
         };
-        ctx.out_keyword( postfix[(flags >> REG_POST_SHIFT) & 0xF] );
+        ctx.out_keyword( postfix[(flags & REG_POST_MASK) >> REG_POST_SHIFT] );
         if( (flags & REG_POST_INC) )
             ctx.out_line( S_SYMBOL("++") );
     }
@@ -204,13 +206,14 @@ static void hex_out_mem( outctx_t &ctx, uint32_t type )
 {
     static const char *types[] = {
         "memb", "membh", "memub", "memubh", "memh", "memuh",
-        "memw", "memd",  "vmem",  "vmem",  "vmemu",
+        "memw", "memd",  "vmem",  "vmemu", "mxmem", "mxmem2",
+    };
+    static const char *infixes[] = {
+        "", "_fifo", "_locked", "_aq", "_rl",
     };
     ctx.out_line( types[ type & MEM_TYPE_MASK ], COLOR_INSN );
-    if( (type & MEM_FIFO) )
-        ctx.out_line( "_fifo", COLOR_INSN );
-    if( (type & MEM_LOCKED) )
-        ctx.out_line( "_locked", COLOR_INSN );
+    if( (type & MEM_INFIX_MASK) )
+        ctx.out_line( infixes[ (type & MEM_INFIX_MASK) >> MEM_INFIX_SHIFT ], COLOR_INSN );
 }
 
 ssize_t out_operand( outctx_t &ctx, const op_t &op )
@@ -220,7 +223,7 @@ ssize_t out_operand( outctx_t &ctx, const op_t &op )
 
     // memory accesses
     if( op.type == o_mem || op.type == o_displ ||
-        o_mem_abs_set <= op.type && op.type <= o_mem_locked )
+        o_mem_abs_set <= op.type && op.type <= o_mxmem )
     {
         hex_out_mem( ctx, mem_op_type( op ) );
         ctx.out_symbol( '(' );
@@ -246,7 +249,7 @@ ssize_t out_operand( outctx_t &ctx, const op_t &op )
             hex_out_reg( ctx, op.reg );
             if( op.addr != 0 || op.reg == REG_SP || op.reg == REG_GP ) {
                 ctx.out_line( " + #", COLOR_SYMBOL );
-                if( (op.specflag2 & IMM_EXTENDED) ) ctx.out_symbol( '#' );
+                if( (mem_op_type( op ) & MEM_IMM_EXT) ) ctx.out_symbol( '#' );
                 ctx.out_value( op, OOF_ADDR | OOFS_IFSIGN | OOF_SIGNED | OOFW_32 );
             }
             break;
@@ -294,9 +297,45 @@ ssize_t out_operand( outctx_t &ctx, const op_t &op )
                 hex_out_reg( ctx, op.specflag2 );
             }
             break;
+        case o_mxmem:        // mxmem[2](Rs[,Rt])
+            hex_out_reg( ctx, op.reg >> 8 );
+            if( (op.reg & 0xFF) != 0xFF ) {
+                ctx.out_line( ", ", COLOR_SYMBOL );
+                hex_out_reg( ctx, op.reg & 0xFF );
+            }
+            break;
         }
         ctx.out_symbol( ')' );
-        if( mem_op_type( op ) == MEM_VNT ) ctx.out_keyword( ":nt" );
+        if( (mem_op_type( op ) & MEM_SUFFIX_MASK) )
+        {
+            static const char *suffixes[] = {
+                "", ":nt", ":at", ":st",
+            };
+            ctx.out_keyword( suffixes[ (mem_op_type( op ) & MEM_SUFFIX_MASK) >> MEM_SUFFIX_SHIFT ] );
+        }
+        if( op.type == o_mxmem )
+        {
+            uint32_t type = mem_op_type( op );
+            static const char *suff1[] = {
+                "", ":single", ":drop", ":deep", ":before", ":after", ":above", ":dilate"
+            };
+            static const char *suff2[] = {
+                "", ":pos", ":sat",
+            };
+            static const char *types[] = {
+                "", ".ub", ".uh", ".hf",
+            };
+            if( ((type >> 10) & 7) )
+                ctx.out_keyword( suff1[ (type >> 10) & 7 ] );
+            if( (type & MX_RETAIN) )
+                ctx.out_keyword( ":retain" );
+            if( (type & MX_CM) )
+                ctx.out_keyword( ":cm" );
+            if( ((type >> 15) & 3) )
+                ctx.out_keyword( suff2[ (type >> 15) & 3 ] );
+            if( ((type >> 17) & 3) )
+                ctx.out_keyword( types[ (type >> 17) & 3 ] );
+        }
         return 1;
     }
 
@@ -429,7 +468,8 @@ static uint32_t hex_out_insn( outctx_t &ctx, uint32_t itype, uint32_t flags, uin
         static const char *post[] = {
             NULL, ":<<1", ":<<1:rnd", ":<<1:rnd:sat", ":<<1:rnd:sat:shift", ":<<1:sat", ":<<1:sat:shift",
             ":<<16", ":carry", ":carry:sat", ":crnd", ":crnd:sat", ":rnd", ":rnd:>>1:sat", ":rnd:sat",
-            ":sat", ":sat:<<16", ":chop", ":lib", ":neg", ":pos", ":scale", ":nomatch"
+            ":sat", ":sat:<<16", ":chop", ":lib", ":neg", ":pos", ":scale", ":nomatch", ":at", ":st",
+            ":h", ":v",
         };
         ctx.out_keyword( post[(flags & IPO_MASK) >> IPO_SHIFT] );
     }

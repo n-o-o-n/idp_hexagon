@@ -456,7 +456,7 @@ static bool insn_modifies_op0( uint32_t itype )
     // NB: regenerate if instructions or their order changes!
     static const uint32_t mod[] = {
         0xfffffffe, 0xbf7fffff, 0xffffffff, 0x000539c1, 0x022d0808, 0xf1c004c0, 0xffffffff, 0xffffffff,
-        0xffffffff, 0xffffffff, 0xffffffff, 0xfffcffff, 0xff3fffff, 0x001fc1ff,
+        0xffffffff, 0xffffffff, 0x733fffff, 0xe7ffffff, 0xffffffff, 0xfe0ffff9,
     };
     assert( itype < _countof(mod) * 32 );
     return (mod[ itype >> 5 ] >> (itype & 31)) & 1;

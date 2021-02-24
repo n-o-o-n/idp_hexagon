@@ -354,6 +354,18 @@ static const char *const insn_template[] = {
     "%0=vxsubaddw(%1, %2)",                 // Hex_svxsubaddw
     "%0=vzxtbh(%1)",                        // Hex_svzxtbh
     "%0=vzxthw(%1)",                        // Hex_svzxthw
+    // DMA
+    "%0=dmcfgrd(%1)",                       // Hex_dmcfgrd,
+    "dmcfgwr(%0, %1)",                      // Hex_dmcfgwr,
+    "dmlink(%0, %1)",                       // Hex_dmlink,
+    "%0=dmpause",                           // Hex_dmpause,
+    "%0=dmpoll",                            // Hex_dmpoll,
+    "dmresume(%0)",                         // Hex_dmresume,
+    "dmstart(%0)",                          // Hex_dmstart,
+    "%0=dmsyncht",                          // Hex_dmsyncht,
+    "%0=dmtlbsynch",                        // Hex_dmtlbsynch,
+    "%0=dmwait",                            // Hex_dmwait,
+    "release(%0)",                          // Hex_release,
     // HVX
     "%0=prefixsum(%1)",                     // Hex_prefixsum
     "%0=vabs(%1)",                          // Hex_vabs
@@ -446,12 +458,24 @@ static const char *const insn_template[] = {
     "vwhist256(%0)",                        // Hex_vwhist256_1
     "%0=vxor(%1, %2)",                      // Hex_vxor
     "%0=vzxt(%1)",                          // Hex_vzxt
-    // HVX V66 AI extension
+    // HVX v66 AI extension
     "%0=vr16mpyz(%1, %2)",                  // Hex_vr16mpyz
     "%0=vr16mpyzs(%1, %2)",                 // Hex_vr16mpyzs
     "%0=vr8mpyz(%1, %2)",                   // Hex_vr8mpyz
     "%0=vrmpyz(%1, %2)",                    // Hex_vrmpyz
     "%0=zextract(%1)",                      // Hex_zextract
+    // HVX v68
+    "%0=v6mpy(%1, %2, %3)",                 // Hex_v6mpy
+    "%0=vcvt(%1)",                          // Hex_vcvt
+    "%0=vcvt(%1, %2)",                      // Hex_vcvt2
+    "%0=vfmax(%1, %2)",                     // Hex_vfmax
+    "%0=vfmin(%1, %2)",                     // Hex_vfmin
+    "%0=vfmv(%1)",                          // Hex_vfmv
+    "%0=vfneg(%1)",                         // Hex_vfneg
+    // HMX
+    "mxclr%0",                              // Hex_mxclr
+    "%0=mxshl(%0, %1)",                     // Hex_mxshl
+    "mxswap%0",                             // Hex_mxswap
 };
 
 static_assert( _countof(insn_template) == Hex_NUM_INSN, "some strings are missing..." );

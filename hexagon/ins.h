@@ -28,6 +28,7 @@ enum {
     o_mem_circ_reg,                     // memXX(Rx++I:circ(Mu))
     o_mem_inc_brev,                     // memXX(Rx++Mu:brev)
     o_mem_locked,                       // memXX_locked(Rs[,Pd])
+    o_mxmem,                            // mxmem[2](Rs[,Rt])
     o_reg_off,                          // Rs + #u14
 };
 
@@ -48,10 +49,14 @@ enum {
     REG_P0          = REG_R0 + 32,      // scalar predicates
     REG_V0          = REG_P0 + 4,       // vector registers
     REG_Q0          = REG_V0 + 32,      // vector predicates
-    REG_Z           = REG_Q0 + 4,       // 2048 bits regsiter for NN
-    REG_VTMP        = REG_Z + 1,        // virtual register for temporary loads
+    REG_Z           = REG_Q0 + 4,       // 2048 bits register for AI
+    REG_VTMP,                           // virtual register for temporary loads
+    REG_ACC,                            // HMX virtual register
+    REG_BIAS,                           // HMX virtual register
+    REG_ACTIVATION,                     // HMX virtual register
+    REG_WEIGHT,                         // HMX virtual register
     // user mode control registers
-    REG_C0          = REG_VTMP + 1,
+    REG_C0,
     REG_M0          = REG_C(6),         // modifier registers
     REG_M1          = REG_C(7),         // modifier registers
     REG_PC          = REG_C(9),         // program counter
@@ -84,11 +89,20 @@ enum {
     REG_POST_UB     = (10 << 4),        // .ub
     REG_POST_UH     = (11 << 4),        // .uh
     REG_POST_UW     = (12 << 4),        // .uw
-    REG_POST_N      = (13 << 4),        // .n (nibble)
-    REG_POST_C      = (14 << 4),        // .c (crumb)
-    REG_POST_MASK   = (15 << 4),
+    REG_POST_SF     = (13 << 4),        // .sf
+    REG_POST_HF     = (14 << 4),        // .hf
+    REG_POST_Q32    = (15 << 4),        // .qf32
+    REG_POST_Q16    = (16 << 4),        // .qf16
+    REG_POST_N      = (17 << 4),        // .n (nibble)
+    REG_POST_C      = (18 << 4),        // .c (crumb)
+    REG_POST_SC     = (19 << 4),        // .sc
+    REG_POST_SM     = (20 << 4),        // .sm
+    REG_POST_UBIT   = (21 << 4),        // .ubit
+    REG_POST_SBIT   = (22 << 4),        // .sbit
+    REG_POST_2x1    = (23 << 4),        // :2x1
+    REG_POST_MASK   = (31 << 4),
     REG_POST_SHIFT  = 4,
-    REG_POST_INC    = (16 << 4),        // ...++
+    REG_POST_INC    = (1  << 9),         // ...++
 };
 
 static __inline uint32_t reg_op_flags( const op_t &op )
@@ -98,7 +112,7 @@ static __inline uint32_t reg_op_flags( const op_t &op )
 
 enum {
     // operand type o_mem or o_mem_xxx:
-    // memory target type (stored in .specflag1)
+    // memory target type (stored in .specval)
     MEM_B           = 0,                // memb
     MEM_BH          = 1,                // membh
     MEM_UB          = 2,                // memub
@@ -108,16 +122,42 @@ enum {
     MEM_W           = 6,                // memw
     MEM_D           = 7,                // memd
     MEM_V           = 8,                // vmem
-    MEM_VNT         = 9,                // vmem():nt
-    MEM_VU          = 10,               // vmemu
+    MEM_VU          = 9,                // vmemu
+    MEM_MX          = 10,               // mxmem
+    MEM_MX2         = 11,               // mxmem2
     MEM_TYPE_MASK   = 0x0F,
-    MEM_FIFO        = 0x10,             // memX_fifo
-    MEM_LOCKED      = 0x20,             // memX_locked
+    MEM_FIFO        = 1 << 4,           // memX_fifo
+    MEM_LOCKED      = 2 << 4,           // memX_locked
+    MEM_AQ          = 3 << 4,           // memX_aq
+    MEM_RL          = 4 << 4,           // memX_rl
+    MEM_INFIX_MASK  = 0x70,
+    MEM_INFIX_SHIFT = 4,
+    MEM_NT          = 1 << 7,           // vmem():nt
+    MEM_AT          = 2 << 7,           // memX():at
+    MEM_ST          = 3 << 7,           // memX():st
+    MEM_SUFFIX_MASK = 0x180,
+    MEM_SUFFIX_SHIFT= 7,
+    MEM_IMM_EXT     = 0x200,
+    // mxmem suffixes
+    MX_SINGLE       = 1 << 10,          // :single
+    MX_DROP         = 2 << 10,          // :drop
+    MX_DEEP         = 3 << 10,          // :deep
+    MX_BEFORE       = 4 << 10,          // :before
+    MX_AFTER        = 5 << 10,          // :after
+    MX_ABOVE        = 6 << 10,          // :above
+    MX_DILATE       = 7 << 10,          // :dilate
+    MX_RETAIN       = 1 << 13,          // :retain
+    MX_CM           = 1 << 14,          // :cm
+    MX_POS          = 1 << 15,          // :pos
+    MX_SAT          = 2 << 15,          // :sat
+    MX_UB           = 1 << 17,          // .ub
+    MX_UH           = 2 << 17,          // .uh
+    MX_HF           = 3 << 17,          // .hf
 };
 
 static __inline uint32_t mem_op_type( const op_t &op )
 {
-    return op.specflag1;
+    return op.specval;
 }
 
 enum {
@@ -135,15 +175,18 @@ static __inline uint32_t imm_op_flags( const op_t &op )
 
 enum {
     // instruction flags, stored as usual in .flags
-    INSN_EXTENDED   = (1 << 2),         // has extender word
-    INSN_DUPLEX     = (1 << 3),         // this is duplex
-    INSN_PKT_BEG    = (1 << 4),         // start of packet
-    INSN_PKT_END    = (1 << 5),         // end of packet
-    INSN_ENDLOOP0   = (1 << 6),         // inner loop end
-    INSN_ENDLOOP1   = (1 << 7),         // outer loop end
+    // note: first 3 bits are taken
+    INSN_EXTENDED   = (1 << 3),         // has extender word
+    INSN_DUPLEX     = (1 << 4),         // this is duplex
+    INSN_PKT_BEG    = (1 << 5),         // start of packet
+    INSN_PKT_END    = (1 << 6),         // end of packet
+    INSN_ENDLOOP0   = (1 << 7),         // inner loop end
+    INSN_ENDLOOP1   = (1 << 8),         // outer loop end
     INSN_ENDLOOP01  = INSN_ENDLOOP0 | INSN_ENDLOOP1,
-#define INSN_BEG_OFF(o) (((o) & 3) << 8)  // offset from packet start in words (0..3)
-#define INSN_END_OFF(o) (((o) & 3) << 10) // offset to packet end in words (0..3)
+#define INSN_BEG_OFF(o) (((o) & 3) << 9)  // offset from packet start in words (0..3)
+#define INSN_END_OFF(o) (((o) & 3) << 11) // offset to packet end in words (0..3)
+    INSN_BEG_SHIFT  = 9,
+    INSN_END_SHIFT  = 11,
 
     // all other flags are stored in .auxpref_u16[*] and .segpref/.insnpref
     // instruction predicates
@@ -199,6 +242,10 @@ enum {
     IPO_POS         = (20 << 7),        // :pos
     IPO_SCALE       = (21 << 7),        // :scale
     IPO_NM          = (22 << 7),        // :nomatch
+    IPO_AT          = (23 << 7),        // :at
+    IPO_ST          = (24 << 7),        // :st
+    IPO_H           = (25 << 7),        // :h
+    IPO_V           = (26 << 7),        // :v
     IPO_MASK        = (31 << 7),
     IPO_SHIFT       = 7,
 
@@ -261,14 +308,14 @@ static __inline uint32_t get_op_index( uint32_t flags )
 static __inline ea_t packet_start( const insn_t &insn )
 {
     // returns start address of instruction's packet
-    return insn.ea - ((insn.flags >> 8) & 3) * 4;
+    return insn.ea - ((insn.flags >> INSN_BEG_SHIFT) & 3) * 4;
 }
 
 static __inline ea_t packet_end( const insn_t &insn )
 {
     // returns end address of instruction's packet, i.e.
     // address of the next packet
-    return insn.ea + (((insn.flags >> 10) & 3) + 1) * 4;
+    return insn.ea + (((insn.flags >> INSN_END_SHIFT) & 3) + 1) * 4;
 }
 
 /*
@@ -282,8 +329,8 @@ static __inline ea_t packet_end( const insn_t &insn )
   2) for some instructions the order of arguments is swapped to simplify
      parsing so that Rs=%1 and Rt=%2.
   3) for new_value() to work, always keep %0 as destination.
-  4) HVX instructions must be separate. We assume that instructions in the
-     range Hex_prefixsum ~ Hex_zextract are HVX.
+  4) HVX instructions must be separate. We assume that HVX instructions are in the
+     range Hex_HVX_FIRST ~ Hex_HVX_LAST.
 */
 enum {
     Hex_NONE = 0,
@@ -633,8 +680,21 @@ enum {
     Hex_svxsubaddw,                         // %0 = vxsubaddw(%1,%2)
     Hex_svzxtbh,                            // %0 = vzxtbh(%1)
     Hex_svzxthw,                            // %0 = vzxthw(%1)
+    // DMA
+    Hex_dmcfgrd,                            // %0 = dmcfgrd(%1)
+    Hex_dmcfgwr,                            // dmcfgwr(%0,%1)
+    Hex_dmlink,                             // dmlink(%0,%1)
+    Hex_dmpause,                            // %0 = dmpause
+    Hex_dmpoll,                             // %0 = dmpoll
+    Hex_dmresume,                           // dmresume(%0)
+    Hex_dmstart,                            // dmstart(%0)
+    Hex_dmsyncht,                           // %0 = dmsyncht
+    Hex_dmtlbsynch,                         // %0 = dmtlbsynch
+    Hex_dmwait,                             // %0 = dmwait
+    Hex_release,                            // release(%0)
     // HVX
-    Hex_prefixsum,                          // %0 = prefixsum(%1)
+    Hex_HVX_FIRST,
+    Hex_prefixsum = Hex_HVX_FIRST,          // %0 = prefixsum(%1)
     Hex_vabs,                               // %0 = vabs(%1)
     Hex_vabsdiff,                           // %0 = vabsdiff(%1,%2)
     Hex_vadd,                               // %0 = vadd(%1,%2)
@@ -725,11 +785,24 @@ enum {
     Hex_vwhist256_1,                        // vwhist256(%0)
     Hex_vxor,                               // %0 = vxor(%1,%2)
     Hex_vzxt,                               // %0 = vzxt(%1)
-    // HVX V66 AI extension
+    // HVX v66 AI extension
     Hex_vr16mpyz,                           // %0 = vr16mpyz(%1,%2)
     Hex_vr16mpyzs,                          // %0 = vr16mpyzs(%1,%2)
     Hex_vr8mpyz,                            // %0 = vr8mpyz(%1,%2)
     Hex_vrmpyz,                             // %0 = vrmpyz(%1,%2)
     Hex_zextract,                           // %0 = zextract(%1)
+    // HVX v68
+    Hex_v6mpy,                              // %0 = v6mpy(%1,%2,%3)
+    Hex_vcvt,                               // %0 = vcvt(%1)
+    Hex_vcvt2,                              // %0 = vcvt(%1,%2)
+    Hex_vfmax,                              // %0 = vfmax(%1,%2)
+    Hex_vfmin,                              // %0 = vfmin(%1,%2)
+    Hex_vfmv,                               // %0 = vfmv(%1)
+    Hex_vfneg,                              // %0 = vfneg(%1)
+    Hex_HVX_LAST = Hex_vfneg,
+    // HMX
+    Hex_mxclr,                              // mxclr%0
+    Hex_mxshl,                              // %0 = mxshl(%0,%1)
+    Hex_mxswap,                             // mxswap%0
     Hex_NUM_INSN,
 };

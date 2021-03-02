@@ -8,6 +8,12 @@
 
 static bool hex_is_switch( const insn_t &insn, switch_info_t *si );
 
+// Ideally the duplex instructions should be represented as two individual insn_t.
+// But this would conflict with the way how IDA associates instructions with physical addresses (EAs),
+// because in duplex instructions the logically "first" sub-instruction is at a higher address.
+// The compound insn_t makes it difficult to enumerate the stream of instructions.
+// Hence the template below:
+
 template <typename Visitor, typename ...Args>
 static __inline bool visit_sub_insn( const insn_t &insn, Visitor visitor, Args... args )
 {
@@ -305,14 +311,25 @@ bool hex_is_jump_func( func_t &pfn, ea_t *jump_target, ea_t *func_pointer )
 {
     ea_t ea = pfn.start_ea;
     if( pfn.end_ea == ea + 16 &&                            // 16 bytes long:
-        (get_dword( ea + 0 ) & 0x0000C000) == 0x00004000 && // extender
-        (get_dword( ea + 4 ) & 0xffffe01f) == 0x6a49c00e && // r14 = add(pc, ##off@pcrel)
-        get_dword( ea +  8 ) == 0x918ec01c &&               // r28 = memw(r14)
-        get_dword( ea + 12 ) == 0x529cc000 )                // jumpr r28
+        (get_dword( ea + 0 ) & 0xf000C000) == 0x00004000 && // { extender
+        (get_dword( ea + 4 ) & 0xffffe01f) == 0x6a49c00e && //   r14 = add(pc, ##off@pcrel) }
+        get_dword( ea +  8 ) == 0x918ec01c &&               // { r28 = memw(r14) }
+        get_dword( ea + 12 ) == 0x529cc000 )                // { jumpr r28 }
     {
         uint32_t ext = get_dword( ea ), ins = get_dword( ea + 4 );
         uint32_t off = ((ext & 0x0fff0000) << 4) | ((ext & 0x3fff) << 6) | ((ins >> 7) & 0x3f);
         *jump_target = get_dword( ea + off );
+        if( func_pointer ) *func_pointer = BADADDR;
+        return true;
+    }
+    else if( pfn.end_ea == ea + 12 &&                       // 12 bytes long:
+        (get_dword( ea + 0 ) & 0xf000C000) == 0x00004000 && // { extender
+        (get_dword( ea + 4 ) & 0xffffe01f) == 0x6a49c00e && //   r14 = add(pc, ##off@pcrel) }
+        get_dword( ea + 8 ) == 0x528ec000 )                 // { jumpr r14 }
+    {
+        uint32_t ext = get_dword( ea ), ins = get_dword( ea + 4 );
+        uint32_t off = ((ext & 0x0fff0000) << 4) | ((ext & 0x3fff) << 6) | ((ins >> 7) & 0x3f);
+        *jump_target = ea + off;
         if( func_pointer ) *func_pointer = BADADDR;
         return true;
     }

@@ -1392,6 +1392,17 @@ static uint32_t iclass_9_LD( uint32_t word, uint64_t extender, op_t **ops, uint3
         add_mem_ind( ops, mtype[0], REG_R(s5), imm, extended );
         return Hex_mov;
     }
+    if( BITS(27:24) == 0b1011 && mtype[0] != 255 && BIT(13) == 1 )
+    {
+        // if ([!]Pt4[.new]) Rd32 = memXX(Rx32++#Ii)
+        add_reg( ops, REG_P(BITS(10:9)),
+                 (BIT(11)? REG_PRE_NOT : 0) |
+                 (BIT(12)? REG_POST_NEW : 0) );
+        add_reg( ops, REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
+        add_mem_inc( ops, o_mem_inc_imm, mtype[0], REG_R(s5), SBITS(8:5) << mtype[1] );
+        flags = PRED_REG;
+        return Hex_mov;
+    }
     if( BIT(27) == 1 && mtype[0] != 255 && BITS(12:10) == 0 )
     {
         // Rd32 = memXX(Rx32++...)
@@ -1404,17 +1415,6 @@ static uint32_t iclass_9_LD( uint32_t word, uint64_t extender, op_t **ops, uint3
 
         add_reg( ops, REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
         add_mem_inc( ops, otype, mtype[0], REG_R(s5), imm, mu? REG_M1 : REG_M0 );
-        return Hex_mov;
-    }
-    if( BITS(27:24) == 0b1011 && mtype[0] != 255 && BIT(13) == 1 )
-    {
-        // if ([!]Pt4[.new]) Rd32 = memXX(Rx32++#Ii)
-        add_reg( ops, REG_P(BITS(10:9)),
-                 (BIT(11)? REG_PRE_NOT : 0) |
-                 (BIT(12)? REG_POST_NEW : 0) );
-        add_reg( ops, REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
-        add_mem_inc( ops, o_mem_inc_imm, mtype[0], REG_R(s5), SBITS(8:5) << mtype[1] );
-        flags = PRED_REG;
         return Hex_mov;
     }
     if( BITS(27:21) == 0b0000000 && BITS(13:5) == 0 )
@@ -1541,6 +1541,20 @@ static uint32_t iclass_10_ST( uint32_t word, uint64_t extender, op_t **ops, uint
                  code == 6? REG_DOUBLE : 0 );
         return Hex_mov;
     }
+    if( BITS(27:24) == 0b1011 && BIT(13) == 1 && type != 255 )
+    {
+        // if ([!]Pt4[.new]) memX(Rx32++#Ii) = Rt[t]32[.h|.new]
+        add_reg( ops, REG_P(BITS(1:0)),
+                 (BIT(2)? REG_PRE_NOT : 0) |
+                 (BIT(7)? REG_POST_NEW : 0) );
+        add_mem_inc( ops, o_mem_inc_imm, type, REG_R(s5), SBITS(6:3) << mem_shift( type ) );
+        add_reg( ops, code == 5? new_value( BITS(10:8) ) : REG_R(t5),
+                 code == 5? REG_POST_NEW :
+                 code == 3? REG_POST_HI :
+                 code == 6? REG_DOUBLE : 0 );
+        flags = PRED_REG;
+        return Hex_mov;
+    }
     if( BIT(27) == 1 && BIT(24) == 1 && BIT(7) == 0 && BIT(2) == 0 && BIT(0) == 0 && type != 255 )
     {
         // memX(Rx32++...) = Rt[t]32[.h|.new]
@@ -1556,20 +1570,6 @@ static uint32_t iclass_10_ST( uint32_t word, uint64_t extender, op_t **ops, uint
                  code == 5? REG_POST_NEW :
                  code == 3? REG_POST_HI :
                  code == 6? REG_DOUBLE : 0 );
-        return Hex_mov;
-    }
-    if( BITS(27:24) == 0b1011 && BIT(13) == 1 && type != 255 )
-    {
-        // if ([!]Pt4[.new]) memX(Rx32++#Ii) = Rt[t]32[.h|.new]
-        add_reg( ops, REG_P(BITS(1:0)),
-                 (BIT(2)? REG_PRE_NOT : 0) |
-                 (BIT(7)? REG_POST_NEW : 0) );
-        add_mem_inc( ops, o_mem_inc_imm, type, REG_R(s5), SBITS(6:3) << mem_shift( type ) );
-        add_reg( ops, code == 5? new_value( BITS(10:8) ) : REG_R(t5),
-                 code == 5? REG_POST_NEW :
-                 code == 3? REG_POST_HI :
-                 code == 6? REG_DOUBLE : 0 );
-        flags = PRED_REG;
         return Hex_mov;
     }
     if( BITS(27:23) == 0b00001 && BIT(21) == 1 && BIT(13) == 0 && BITS(7:2) == 0 )

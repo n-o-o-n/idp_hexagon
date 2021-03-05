@@ -13,6 +13,9 @@
 #include "ins.h"
 
 #define IN_RANGE(u,lo,hi)           (uint32_t((u) - (lo)) <= ((hi) - (lo)))
+#ifndef _countof
+#  define _countof(array)           (sizeof(array)/sizeof(array[0]))
+#endif
 
 // configuration flags
 extern uint16_t idpflags;

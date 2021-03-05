@@ -848,27 +848,28 @@ static jump_table_type_t is_jump_pattern( switch_info_t *si, const insn_t &insn 
           -> 3
                -> 4
 */
+static const char hex_depends[][4] = {
+    { 1 },        // 0
+    { 2, 3 },     // 1
+    { 3, 4 },     // 2
+    { 0 },        // 3
+    { 0 },        // 4
+};
+
 struct hex_jump_pattern_t : public jump_pattern_t
 {
-    hex_jump_pattern_t( switch_info_t *si ) : jump_pattern_t( si, s_depends, rI )
+    hex_jump_pattern_t( switch_info_t *_si ) : jump_pattern_t( _si, hex_depends, rI )
     {
         modifying_r32_spoils_r64 = false;
-        si->flags |= SWI_HXNOLOWCASE;
+        _si->flags |= SWI_HXNOLOWCASE;
     }
     enum { rA, rB, rT, rI };
-    static constexpr char s_depends[][4] = {
-        { 1 },        // 0
-        { 2, 3 },     // 1
-        { 3, 4 },     // 2
-        { 0 },        // 3
-        { 0 },        // 4
-    };
     virtual bool jpi4( void );
     virtual bool jpi3( void );
     virtual bool jpi2( void );
     virtual bool jpi1( void );
     virtual bool jpi0( void );
-    virtual bool handle_mov( tracked_regs_t &regs );
+    virtual bool handle_mov( tracked_regs_t &_regs );
     virtual bool equal_ops( const op_t &x, const op_t &y ) const;
 };
 
@@ -986,7 +987,7 @@ bool hex_jump_pattern_t::jpi0( void )
     return false;
 }
 
-bool hex_jump_pattern_t::handle_mov( tracked_regs_t &regs )
+bool hex_jump_pattern_t::handle_mov( tracked_regs_t &_regs )
 {
     // track register movement
     if( insn.itype != Hex_mov ||
@@ -995,7 +996,7 @@ bool hex_jump_pattern_t::handle_mov( tracked_regs_t &regs )
 
     // stack load or store?
     const op_t *ops = insn.ops + get_op_index( insn_flags( insn ) );
-    return set_moved( ops[0], ops[1], regs );
+    return set_moved( ops[0], ops[1], _regs );
 }
 
 bool hex_jump_pattern_t::equal_ops( const op_t &x, const op_t &y ) const

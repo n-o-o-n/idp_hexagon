@@ -148,6 +148,7 @@ static const char* proc_handle_reloc(
 {
     // msg( "rel @0x%X: type=%2d, Sadd=0x%X, S=0x%X, sym=%s\n",
     //      rel_data.P, rel_data.type, rel_data.Sadd, rel_data.S, symbol->original_name );
+    uint32_t word, value, mask;
     fixup_type_t ftype = FIXUP_OFF32;
 
     // simple cases
@@ -175,7 +176,7 @@ static const char* proc_handle_reloc(
     }
 
     // word32 masked relocs
-    uint32_t word = get_dword( rel_data.P ), value, mask;
+    word = get_dword( rel_data.P );
     switch( rel_data.type )
     {
     // fixed pattern types

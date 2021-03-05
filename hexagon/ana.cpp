@@ -136,7 +136,7 @@ static uint32_t new_value( uint32_t nt, bool hvx = false )
     if( nt >= 8 || (nt & 6) == 0 ) return ~0u;
     // we're going to parse other instructions, so save globals
     ea_t saved_pkt_start = s_pkt_start, saved_ea = s_insn_ea, ea = s_insn_ea;
-    uint32_t offset = (nt & 6) >> 1, result = ~0u;
+    uint32_t offset = (nt & 6) >> 1, result = ~0u, i;
     insn_t temp;
 
     // scan instructions up until the start of packet
@@ -158,7 +158,7 @@ static uint32_t new_value( uint32_t nt, bool hvx = false )
     }
     // we got the producer, find out the operand
     // TODO: check if duplexes have to be supported
-    uint32_t i = get_op_index( insn_flags( temp ) );
+    i = get_op_index( insn_flags( temp ) );
     assert( temp.ops[i].type == o_reg );
     if( !hvx )
     {

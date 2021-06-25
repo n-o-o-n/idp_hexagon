@@ -76,3 +76,4 @@ History
 2021-02-04 added support for IDA v7.3 and v7.5  
 2021-02-26 added support for Hexagon v68  
 2021-03-02 fixed analysis order; version 3.0 released  
+2021-06-25 fixed crashes related to missing segment registers  

@@ -319,6 +319,10 @@ static const char *const lnames[] = {
     NULL
 };
 
+static const char *const reg_names[] = {
+    // virtual segregs
+    "cs", "ds",
+};
 //-----------------------------------------------------------------------
 //      Processor Definition
 //-----------------------------------------------------------------------
@@ -347,13 +351,13 @@ processor_t LPH = {
                             // selection menu
     asms,                   // array of target assemblers
     notify,                 // the kernel event notification callback
-    NULL,                   // regsiter names
-    0,                      // number of registers
+    reg_names,              // regsiter names
+    qnumber(reg_names),     // number of registers
 
-    -1,                     // index of first segment register
-    -1,                     // index of last segment register
+    0,                      // index of first segment register
+    1,                      // index of last segment register
     0,                      // size of a segment register in bytes
-    0, 0,                   // index of CS & DS registers
+    0, 1,                   // index of CS & DS registers
 
     NULL,                   // no known code start sequences
     NULL,                   // no known 'return' instructions

@@ -44,7 +44,7 @@ Issues
  * Some rare relocation types are not properly recognized.
  * Does not distinguish between different Hexagon versions; will disassemble instructions not supported by a particular version.
  * IDA stores flags for two operands only, and all subsequent operands will have the same flag. For example, if the 2nd operand is an offset, then 4th will be treated as offset too.
- * Xref to a stack variable fails; IDA checks if an instruction modifies operand by reading from processor_t::instruc (which is NULL).
+ * Xref to a stack variable has random type (r/w).
 
 
 Other Hexagon Processor modules
@@ -77,3 +77,4 @@ History
 2021-02-26 added support for Hexagon v68  
 2021-03-02 fixed analysis order; version 3.0 released  
 2021-06-25 fixed crashes related to missing segment registers  
+2021-07-12 fixed crash related to xref to a stack variable; removed PR_ALIGN flag  

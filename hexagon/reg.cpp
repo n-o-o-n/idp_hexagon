@@ -323,6 +323,17 @@ static const char *const reg_names[] = {
     // virtual segregs
     "cs", "ds",
 };
+
+// we add this only to avoid crashes at xref to a stack variable;
+// the issue is that IDA checks if an instruction modifies an operand
+// by reading directly from processor_t::instruc:
+// has_cf_chg(get_ph()->instruc[insn.itype].feature, opnum)
+// Notes:
+// * potentially this array must be nearly 1MB in size, but even then
+//   it won't work for duplex instructions;
+// * IDA will read past the end of this array, returning random xref type (dr_W or dr_R)
+static const instruc_t dummy_insn[1] = { 0 };
+
 //-----------------------------------------------------------------------
 //      Processor Definition
 //-----------------------------------------------------------------------
@@ -336,8 +347,7 @@ processor_t LPH = {
     PR_DEFSEG32 |           // segments are 32-bit by default
     PRN_HEX |               // default number representation: == hex
     PR_TYPEINFO |           // support the type system notifications
-    PR_USE_ARG_TYPES |      // use processor_t::ev_use_arg_types callback
-    PR_ALIGN,               // all data items should be aligned properly
+    PR_USE_ARG_TYPES,       // use processor_t::ev_use_arg_types callback
                             // flag2:
     PR2_REALCVT |           // the module has 'realcvt' event implementation
     PR2_IDP_OPTS,           // the module has processor-specific configuration options
@@ -364,7 +374,7 @@ processor_t LPH = {
 
     0,                      // icode of 1st instruction
     0,                      // icode of last instruction + 1
-    NULL,                   // array of instructions
+    dummy_insn,             // array of instructions
 
     0,                      // sizeof(long double) -- doesn't exist
     { 0, 7, 15, 0 },        // number of symbols after decimal point (must define for floats to work)

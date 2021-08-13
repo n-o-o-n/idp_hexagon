@@ -194,7 +194,7 @@ static void hex_out_reg( outctx_t &ctx, uint32_t reg, uint32_t flags = 0 )
             "", ".new", ".cur", ".tmp", ".l", ".h", "*",
             ".b", ".h", ".w", ".ub", ".uh", ".uw",
             ".sf", ".hf", ".qf32", ".qf16",
-            ".n", ".c", ".sc", ".sm", ".ubit", ".sbit", ":2x1"
+            ".n", ".c", ".sc", ".sm", ".ubit", ".sbit", ":2x1", ":2x2"
         };
         ctx.out_keyword( postfix[(flags & REG_POST_MASK) >> REG_POST_SHIFT] );
         if( (flags & REG_POST_INC) )
@@ -469,7 +469,7 @@ static uint32_t hex_out_insn( outctx_t &ctx, uint32_t itype, uint32_t flags, uin
             NULL, ":<<1", ":<<1:rnd", ":<<1:rnd:sat", ":<<1:rnd:sat:shift", ":<<1:sat", ":<<1:sat:shift",
             ":<<16", ":carry", ":carry:sat", ":crnd", ":crnd:sat", ":rnd", ":rnd:>>1:sat", ":rnd:sat",
             ":sat", ":sat:<<16", ":chop", ":lib", ":neg", ":pos", ":scale", ":nomatch", ":at", ":st",
-            ":h", ":v",
+            ":h", ":v", ":>>16",
         };
         ctx.out_keyword( post[(flags & IPO_MASK) >> IPO_SHIFT] );
     }

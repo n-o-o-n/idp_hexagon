@@ -225,7 +225,7 @@ static __inline void add_imm( op_t **ops, uint32_t imm, bool _signed = false, bo
 static __inline uint32_t mem_shift( uint32_t type )
 {
     // returns offset shift for specified memory type
-    static const uint8_t shifts[16] = { 0,0,0,0,1,1,2,3,7,7,7 };
+    static const uint8_t shifts[16] = { 0,0,0,0,1,1,2,3,7,7,0,0 };
     return shifts[ type & MEM_TYPE_MASK ];
 }
 
@@ -3773,6 +3773,47 @@ static uint32_t iclass_1_HVX_v68( uint32_t word, uint64_t /*extender*/, op_t **o
     return code;
 }
 
+static uint32_t iclass_1_HVX_v69( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+{
+    uint32_t s5 = BITS(20:16), u5 = BITS(12:8), d5 = BITS(4:0);
+
+    if( BITS(27:21) == 0b1101000 && BIT(13) == 0 && BIT(7) == 0 )
+    {
+        // Vd32.{uh|ub} = vasr(Vuu32.{w|uh},Vv32.{uh|ub})[:rnd]:sat
+        add_reg( ops, REG_V(d5), BIT(6)? REG_POST_UB : REG_POST_UH );
+        add_reg( ops, REG_V(u5), REG_DOUBLE | (BIT(6)? REG_POST_UH : REG_POST_W) );
+        add_reg( ops, REG_V(s5), BIT(6)? REG_POST_UB : REG_POST_UH );
+        flags = BIT(5)? IPO_RND_SAT : IPO_SAT;
+        return Hex_vasr;
+    }
+    if( BITS(27:21) == 0b1110000 && BITS(20:16) == 0b00001 && BIT(13) == 0 && BITS(7:5) == 0b110 )
+    {
+        // Vd32.tmp = Vu32
+        add_reg( ops, REG_V(d5), REG_POST_TMP );
+        add_reg( ops, REG_V(u5) );
+        return Hex_mov;
+    }
+    if( BITS(27:21) == 0b1110101 && BIT(13) == 0 && BITS(7:5) == 0b111 )
+    {
+        // Vdd32.tmp = vcombine(Vu32,Vv32)
+        add_reg( ops, REG_V(d5), REG_DOUBLE | REG_POST_TMP );
+        add_reg( ops, REG_V(u5) );
+        add_reg( ops, REG_V(s5) );
+        return Hex_vcombine;
+    }
+    if( BITS(27:21) == 0b1111110 && BIT(13) == 1 && BITS(7:5) == 0b111 )
+    {
+        // Vd32.uh = vmpy(Vu32.uh,Vv32.uh):>>16
+        add_reg( ops, REG_V(d5), REG_POST_UH );
+        add_reg( ops, REG_V(u5), REG_POST_UH );
+        add_reg( ops, REG_V(s5), REG_POST_UH );
+        flags = IPO_RS16;
+        return Hex_vmpy;
+    }
+
+    return 0;
+}
+
 static uint32_t iclass_2_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), u5 = BITS(12:8), d5 = BITS(4:0);
@@ -4105,9 +4146,22 @@ static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops,
             MX_BEFORE | MX_RETAIN, MX_AFTER | MX_POS, MX_AFTER | MX_SAT, MX_AFTER,
             MX_AFTER | MX_RETAIN, MX_AFTER | MX_RETAIN | MX_POS, MX_AFTER | MX_RETAIN | MX_SAT, MX_AFTER | MX_RETAIN,
         };
-        add_mxmem( ops, MEM_MX | suff[ BITS(3:0) ] |
-                        (BIT(1)? MX_UH : MX_HF), REG_R(s5), REG_R(t5) );
+        add_mxmem( ops, MEM_MX |
+                        suff[ BITS(3:0) ] |
+                        (BIT(1)? MX_UH : MX_HF),
+                        REG_R(s5), REG_R(t5) );
         add_reg( ops, REG_ACC, BIT(1)? REG_POST_2x1 : 0 );
+        return Hex_mov;
+    }
+    if( BIT(13) == 1 && BIT(4) == 1 && BIT(1) == 1 )
+    {
+        // mxmem(Rs32,Rt32):{before|after}[:retain][:sat].uh=acc:2x2
+        add_mxmem( ops, MEM_MX | MX_UH |
+                        (BIT(3)? MX_AFTER : MX_BEFORE) |
+                        (BIT(2)? MX_RETAIN : 0) |
+                        (BIT(0)? 0 : MX_SAT),
+                        REG_R(s5), REG_R(t5) );
+        add_reg( ops, REG_ACC, REG_POST_2x2 );
         return Hex_mov;
     }
     // rest of instructions
@@ -4372,6 +4426,7 @@ static bool decode_single( insn_t &insn, uint32_t word, uint64_t extender )
         if( !itype ) itype = iclass_1_HVX( word, extender, &ops, flags );
         if( !itype ) itype = iclass_1_ZReg( word, extender, &ops, flags );
         if( !itype ) itype = iclass_1_HVX_v68( word, extender, &ops, flags );
+        if( !itype ) itype = iclass_1_HVX_v69( word, extender, &ops, flags );
         break;
     case 2:
         itype = iclass_2_NCJ( word, extender, &ops, flags );

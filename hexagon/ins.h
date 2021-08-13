@@ -100,6 +100,7 @@ enum {
     REG_POST_UBIT   = (21 << 4),        // .ubit
     REG_POST_SBIT   = (22 << 4),        // .sbit
     REG_POST_2x1    = (23 << 4),        // :2x1
+    REG_POST_2x2    = (24 << 4),        // :2x2
     REG_POST_MASK   = (31 << 4),
     REG_POST_SHIFT  = 4,
     REG_POST_INC    = (1  << 9),         // ...++
@@ -246,6 +247,7 @@ enum {
     IPO_ST          = (24 << 7),        // :st
     IPO_H           = (25 << 7),        // :h
     IPO_V           = (26 << 7),        // :v
+    IPO_RS16        = (27 << 7),        // :>>16
     IPO_MASK        = (31 << 7),
     IPO_SHIFT       = 7,
 

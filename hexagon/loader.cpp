@@ -28,15 +28,15 @@ enum {
 };
 
 // base address of small data area, used for GP-relative relocations
-uint32_t _SDA_BASE_ = 0;
+static uint32_t _SDA_BASE_ = 0;
 // base address for thread-local relocations
-uint32_t _TLS_START_ = 0;
+static uint32_t _TLS_START_ = 0;
 // address of global offset table
-uint32_t _GOT_ = 0;
+static uint32_t _GOT_ = 0;
 // address of procedure linkage table
-uint32_t _PLT_ = 0;
+static uint32_t _PLT_ = 0;
 // base address for message base optimization
-uint32_t _MSG_BASE_ = 0;
+static uint32_t _MSG_BASE_ = 0;
 
 // process e_flags field of ELF header
 static const char* proc_describe_flag_bit( proc_def_t* /*self*/, uint32 *e_flags )
@@ -54,6 +54,8 @@ static const char* proc_describe_flag_bit( proc_def_t* /*self*/, uint32 *e_flags
     case EF_HEXAGON_MACH_V67:  opts = "Hexagon V67"; break;
     case EF_HEXAGON_MACH_V67T: opts = "Hexagon V67 Small Core"; break;
     case EF_HEXAGON_MACH_V68:  opts = "Hexagon V68"; break;
+    case EF_HEXAGON_MACH_V69:  opts = "Hexagon V69"; break;
+    case EF_HEXAGON_MACH_V71:  opts = "Hexagon V71"; break;
     }
     // clear used flags to prevent infinite loop
     if( opts ) *e_flags = 0;
@@ -391,11 +393,13 @@ ssize_t loader_elf_machine( linput_t*, int machine_type, const char**, proc_def_
     // as proc_def_t's functions are not exported, there are two options:
     // a) manually re-implement all missing functions
     // b) replace vft in the existing proc_def_t object at *p_pd
+
     // ****** WARNING: dirty hack ******:
     static uintptr_t vft[21];
     memcpy( vft, **(uintptr_t***)p_pd, sizeof(vft) );
     vft[2] = (uintptr_t) proc_handle_reloc;
     vft[7] = (uintptr_t) proc_describe_flag_bit;
+    vft[9] = (uintptr_t) proc_handle_dynamic_tag;
     **(uintptr_t***)p_pd = vft;
 
     return machine_type;

@@ -48,20 +48,20 @@ static const char *ctrl_rn[32] = {
     /* 28 */ NULL,         NULL,         "utimerlo",   "utimerhi",
 };
 
-// guest mode control registers (as in V67)
+// guest mode control registers (as in V69)
 // TODO: change according to CPU version
 static const char *guest_rn[32] = {
     /*  0 */ "gelr",       "gsr",        "gosp",       "gbadva",
-    /*  4 */ "gcommit_1t", "gcommit_2t", "gcommit_3t", "gcommit_4t",
-    /*  8 */ "gcommit_5t", "gcommit_6t", "gcycle_1t",  "gcycle_2t",
-    /* 12 */ "gcycle_3t",  "gcycle_4t",  "gcycle_5t",  "gcycle_6t",
+    /*  4 */ "gcommit1t",  "gcommit2t",  "gcommit3t",  "gcommit4t",
+    /*  8 */ "gcommit5t",  "gcommit6t",  "gpcycle1t",  "gpcycle2t",
+    /* 12 */ "gpcycle3t",  "gpcycle4t",  "gpcycle5t",  "gpcycle6t",
     /* 16 */ "gpmucnt4",   "gpmucnt5",   "gpmucnt6",   "gpmucnt7",
-    /* 20 */ NULL,         NULL,         NULL,         NULL,
+    /* 20 */ "gcommit7t",  "gcommit8t",  "gpcycle7t",  "gpcycle8t",
     /* 24 */ "gpcyclelo",  "gpcyclehi",  "gpmucnt0",   "gpmucnt1",
     /* 28 */ "gpmucnt2",   "gpmucnt3",   NULL,         NULL,
 };
 
-// monitor mode control registers (as in V67)
+// monitor mode control registers (as in V69)
 static const char *sys_rn[128] = {
     /*  0 */ "sgp0",       "sgp1",       "stid",       "elr",
     /*  4 */ "badva0",     "badva1",     "ssr",        "ccr",
@@ -77,7 +77,14 @@ static const char *sys_rn[128] = {
     /* 44 */ "pmucnt4",    "pmucnt5",    "pmucnt6",    "pmucnt7",
     /* 48 */ "pmucnt0",    "pmucnt1",    "pmucnt2",    "pmucnt3",
     /* 52 */ "pmuevtcfg",  "pmustid0",   "pmuevtcfg1", "pmustid1",
-    /* 56 */ "timerlo",    "timerhi",    "pmucfg",
+    /* 56 */ "timerlo",    "timerhi",    "pmucfg",     NULL,
+    /* 60 */ NULL,         NULL,         NULL,         NULL,
+    /* 64 */ "commit1t",   "commit2t",   "commit3t",   "commit4t",
+    /* 68 */ "commit5t",   "commit6t",   "pcycle1t",   "pcycle2t",
+    /* 72 */ "pcycle3t",   "pcycle4t",   "pcycle5t",   "pcycle6t",
+    /* 76 */ "stfinst",    "isdbcmd",    "isdbver",    "brkptinfo",
+    /* 80 */ "rgdr3",      "commit7t",   "commit8t",   "pcycle7t",
+    /* 84 */ "pcycle8t",
 };
 
 static void hex_out_reg( outctx_t &ctx, uint32_t reg, uint32_t flags = 0 )

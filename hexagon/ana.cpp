@@ -110,7 +110,12 @@ uint32_t get_num_ops( uint32_t itype, uint32_t flags )
     // returns number of operands for a given instruction
     // for example, Hex_add uses three (%0 = add(%1,%2))
     // used to get to 2nd half of duplex instructions
-    assert( itype < sizeof(num_ops) * 2 );
+    //assert( itype < sizeof(num_ops) * 2 );
+    if (!(itype < sizeof(num_ops) * 2))
+    {
+		warning("get_num_ops: itype %d is out of range\n", itype);
+		return 0;
+    }
     return get_op_index( flags ) + ((num_ops[ itype >> 1 ] >> 4 * (itype & 1)) & 0xF);
 }
 
@@ -154,10 +159,21 @@ uint32_t hexagon_t::new_value( uint32_t nt, bool hvx )
     // we got the producer, find out the operand
     // TODO: check if duplexes have to be supported
     i = get_op_index( insn_flags( temp ) );
-    assert( temp.ops[i].type == o_reg );
+    //assert( temp.ops[i].type == o_reg );
+  	if ( !(temp.ops[i].type == o_reg ) )
+	{
+		warning("%08X: new_value: not a reg! op_idx=%d, op[i].type=%d\n", temp.ea, i, temp.ops[i].type);
+		goto __cleanup;
+	}
+
     if( !hvx )
     {
-        assert( (nt & 1) == 0 );
+        //assert( (nt & 1) == 0 );
+        if ( !((nt & 1) == 0) )
+		{
+			warning("%08X: new_value: nt.0 is 1\n", temp.ea);
+			goto __cleanup;
+		}
         result = temp.ops[i].reg;
     }
     else // hvx
@@ -298,7 +314,13 @@ static void add_mem_locked( op_t **ops, uint32_t type, uint32_t rs, uint32_t pd 
 static void add_mem_ind_off( op_t **ops, uint32_t type, uint32_t rs, uint32_t ru, uint32_t imm )
 {
     // memXX(Rs + Ru << #u2)
-    assert( rs < 256 && ru < 256 && imm < 4 );
+    //assert( rs < 256 && ru < 256 && imm < 4 );
+    if (!( rs < 256 && ru < 256 && imm < 4 ))
+	{
+		warning("add_mem_ind_off: rs=%d, ru=%d, imm=%d out of range\n", rs, ru, imm);
+		return;
+	}
+
     op_t *op = *ops;
     op->type = o_mem_ind_off;
     op->specval = type;
@@ -346,7 +368,13 @@ void hexagon_t::add_pcrel( op_t **ops, int32_t offset )
 static __inline uint8_t gen_sub_reg( uint32_t v )
 {
     // r0..r7, r16..r23
-    assert( v < 16 );
+    //assert( v < 16 );
+    if (!( v < 16 ))
+	{
+		warning("gen_sub_reg: v=%d is out of range\n", v);
+        return REG_R(0);
+	}
+
     return REG_R( v + (v < 8? 0 : 8) );
 };
 
@@ -4494,7 +4522,12 @@ bool hexagon_t::decode_single( insn_t &insn, uint32_t word, uint64_t extender )
 
 static __inline uint8_t duplex_dreg( uint32_t v )
 {
-    assert( v < 8 );
+    //assert( v < 8 );
+    if (!( v < 8 ))
+	{
+		warning("duplex_dreg: v=%d is out of range\n", v);
+        return REG_R(0);
+	}
     return REG_R( 2*v + (v < 4? 0 : 8) );
 };
 

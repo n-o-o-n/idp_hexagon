@@ -97,7 +97,12 @@ static void hex_out_reg( outctx_t &ctx, uint32_t reg, uint32_t flags = 0 )
     if( (flags & REG_QUAD) )
     {
         // quad registers are valid only for HVX
-        assert( IN_RANGE(reg, REG_V0, REG_V0 + 31) && ((reg - REG_V0) & 3) == 0 );
+        //assert( IN_RANGE(reg, REG_V0, REG_V0 + 31) && ((reg - REG_V0) & 3) == 0 );
+        if (!( IN_RANGE(reg, REG_V0, REG_V0 + 31) && ((reg - REG_V0) & 3) == 0 ))
+		{
+			warning("hex_out_reg: REG_QUAD %d is not HVX\n", reg);
+		}
+
         ctx.out_printf( "v%u:%u", reg + 3 - REG_V0, reg - REG_V0 );
     }
     else if( (flags & REG_DOUBLE) )
@@ -125,7 +130,12 @@ static void hex_out_reg( outctx_t &ctx, uint32_t reg, uint32_t flags = 0 )
         else
         {
             if( IN_RANGE(reg, REG_R0, REG_R0 + 31) ) {
-                assert( ((reg - REG_R0) & 1) == 0 );
+                //assert( ((reg - REG_R0) & 1) == 0 );
+                if (((reg - REG_R0) & 1) != 0 )
+				{
+					warning("hex_out_reg: REG_DOUBLE R%d is odd\n", reg-REG_R0);
+				}
+
                 ctx.out_printf( "r%u:%u", reg + 1 - REG_R0, reg - REG_R0 );
             }
             else if( IN_RANGE(reg, REG_V0, REG_V0 + 31) ) {
@@ -134,15 +144,30 @@ static void hex_out_reg( outctx_t &ctx, uint32_t reg, uint32_t flags = 0 )
                 ctx.out_printf( "v%u:%u", (reg - REG_V0) ^ 1 , reg - REG_V0 );
             }
             else if( IN_RANGE(reg, REG_C0, REG_C0 + 31) ) {
-                assert( ((reg - REG_C0) & 1) == 0 );
+                //assert( ((reg - REG_C0) & 1) == 0 );
+                if ( ((reg - REG_C0) & 1) != 0 )
+				{
+					warning("hex_out_reg: REG_DOUBLE C%d is odd\n", reg-REG_C0);
+				}
+
                 ctx.out_printf( "c%u:%u", reg + 1 - REG_C0, reg - REG_C0 );
             }
             else if( IN_RANGE(reg, REG_G0, REG_G0 + 31) ) {
-                assert( ((reg - REG_G0) & 1) == 0 );
+                //assert( ((reg - REG_G0) & 1) == 0 );
+                if ( ((reg - REG_G0) & 1) != 0 )
+				{
+					warning("hex_out_reg: REG_DOUBLE G%d is odd\n", reg-REG_G0);
+				}
+
                 ctx.out_printf( "g%u:%u", reg + 1 - REG_G0, reg - REG_G0 );
             }
             else if( IN_RANGE(reg, REG_S0, REG_S0 + 127) ) {
-                assert( ((reg - REG_S0) & 1) == 0 );
+                //assert( ((reg - REG_S0) & 1) == 0 );
+                if ( ((reg - REG_S0) & 1) != 0 )
+				{
+					warning("hex_out_reg: REG_DOUBLE S%d is odd\n", reg-REG_S0);
+				}
+
                 ctx.out_printf( "s%u:%u", reg + 1 - REG_S0, reg - REG_S0 );
             }
             else

@@ -208,7 +208,7 @@ ssize_t idaapi hexagon_t::on_event(ssize_t notification_code, va_list va)
     }
     case processor_t::ev_get_cc_regs: {
         auto regs = va_arg( va, callregs_t* );
-        auto cc = va_arg( va, cm_t );
+        auto cc = va_argi( va, cm_t );
         hex_get_cc_regs( cc, *regs );
         return 1;
     }
@@ -223,7 +223,7 @@ ssize_t idaapi hexagon_t::on_event(ssize_t notification_code, va_list va)
     case processor_t::ev_calc_retloc: {
         auto retloc = va_arg( va, argloc_t* );
         auto rettype = va_arg( va, const tinfo_t* );
-        auto cc = va_arg( va, cm_t );
+        auto cc = va_argi( va, cm_t );
         return hex_calc_retloc( cc, *rettype, *retloc )? 1 : -1;
     }
     case processor_t::ev_use_arg_types: {

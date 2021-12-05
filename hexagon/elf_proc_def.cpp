@@ -1,6 +1,10 @@
-//ldr/elf.h/proc_def_t reimplementation
+//v7.5+ ldr/elf.h/proc_def_t reimplementation
+
 
 #include "common.h"
+
+#if IDA_SDK_VERSION >= 750
+
 #include "../../ldr/elf/elfbase.h"
 #include "../../ldr/elf/elf.h"
 
@@ -135,3 +139,5 @@ ea_t proc_def_t::proc_adjust_entry(ea_t entry)
 {
     return entry;
 }
+
+#endif

@@ -56,7 +56,13 @@ static inline uchar inf_get_cc_size_e() { return inf.cc.size_e; }
 
 #endif
 
-//IDAv7.6+ multiple instance support.
+#if IDA_SDK_VERSION < 750
+
+struct procmod_t {};
+
+#endif
+
+//IDAv7.5+ multiple instance support.
 //Older versions can instantiate a single object at start and direct all calls to it. TODO: does procmod_t exist in older versions?
 struct hexagon_t : public procmod_t {
     //convert all globals to members
@@ -110,6 +116,14 @@ struct hexagon_t : public procmod_t {
 
 };
 
+#if IDA_SDK_VERSION >= 750
+
 static inline uint16_t out_get_idpflags(outctx_t &ctx) {  return static_cast<hexagon_t *>(ctx.procmod)->idpflags; }
 extern int data_id;
 
+#else
+
+extern hexagon_t procmod;
+static inline uint16_t out_get_idpflags(outctx_t &ctx) {  return procmod.idpflags; }
+
+#endif

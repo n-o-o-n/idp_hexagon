@@ -6,7 +6,16 @@
 ------------------------------------------------------------------------------*/
 #include "common.h"
 
+#if IDA_SDK_VERSION >= 750
+
 int data_id;
+
+#else
+
+//Single-instance procmod
+hexagon_t procmod;
+
+#endif
 
 const char* hexagon_t::set_idp_options( const char *keyword, int value_type, const void *value )
 {
@@ -93,11 +102,15 @@ Hexagon specific options
 }
 
 // This old-style callback only returns the processor module object.
-static ssize_t idaapi notify(void *, int notification_code, va_list)
+static ssize_t idaapi notify(void *, int notification_code, va_list va)
 {
+#if IDA_SDK_VERSION >= 750
     if ( notification_code == processor_t::ev_get_procmod )
         return size_t(SET_MODULE_DATA(hexagon_t));
     return 0;
+#else
+    return procmod.on_event(notification_code, va);
+#endif
 }
 
 ssize_t idaapi hexagon_t::on_event(ssize_t notification_code, va_list va)
@@ -188,12 +201,20 @@ ssize_t idaapi hexagon_t::on_event(ssize_t notification_code, va_list va)
         return 1;
     }
     case processor_t::ev_realcvt: {
+#if IDA_SDK_VERSION >= 760
         // must be implemented for floats to work ?
         void *m = va_arg(va, void *);
         fpvalue_t *e = va_arg(va, fpvalue_t *);
         uint16 swt = va_argi(va, uint16);
         fpvalue_error_t code1 = ieee_realcvt(m, e, swt);
         return code1 == REAL_ERROR_OK ? 1 : code1;
+#else
+        void *m = va_arg(va, void *);
+        uint16 *e = va_arg(va, uint16 *);
+        uint16 swt = va_argi(va, uint16);
+        int code1 = ieee_realcvt(m, e, swt);
+        return code1 == 0 ? 1 : code1;
+#endif
     }
     //
     // type information callbacks

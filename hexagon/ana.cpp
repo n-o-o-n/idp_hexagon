@@ -37,11 +37,6 @@ enum {
     PARSE_LAST      = 0b11,     // end of packet
 };
 
-// start of current instruction packet (PC value)
-static ea_t s_pkt_start;
-// current instruction address
-static ea_t s_insn_ea;
-
 ea_t find_packet_end( ea_t ea )
 {
     // scan instructions forward in order to find the packet end
@@ -131,7 +126,7 @@ static bool is_hvx( const insn_t &insn )
     return false;
 }
 
-static uint32_t new_value( uint32_t nt, bool hvx = false )
+uint32_t hexagon_t::new_value( uint32_t nt, bool hvx )
 {
     if( nt >= 8 || (nt & 6) == 0 ) return ~0u;
     // we're going to parse other instructions, so save globals
@@ -337,7 +332,7 @@ static void add_mxmem( op_t **ops, uint32_t type, uint32_t rs, uint32_t rt = 0xF
     (*ops)++;
 }
 
-static void add_pcrel( op_t **ops, int32_t offset )
+void hexagon_t::add_pcrel( op_t **ops, int32_t offset )
 {
     // a PC-relative offset
     // note: PC points to the start of this instruction packet
@@ -359,7 +354,7 @@ static __inline uint8_t gen_sub_reg( uint32_t v )
 // core instructions parsing
 //
 
-static uint32_t iclass_1_CJ( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_1_CJ( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
 {
     if( BIT(0) != 0 ) return 0;
     uint32_t rs = gen_sub_reg( BITS(19:16) ), rt = gen_sub_reg( BITS(11:8) );
@@ -424,7 +419,7 @@ static uint32_t iclass_1_CJ( uint32_t word, uint64_t extender, op_t **ops, uint3
     return 0;
 }
 
-static uint32_t iclass_2_NCJ( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_2_NCJ( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
 {
     // if ([!]cond(Ns8.new...)) jump%t Ii
     if( BIT(19) != 0 || BIT(0) != 0 ) return 0;
@@ -470,7 +465,7 @@ static const uint8_t types_ld[8] = { MEM_B, MEM_UB, MEM_H, MEM_UH, MEM_W, 255, M
 static const uint8_t types_st[8] = { MEM_B, 255, MEM_H, MEM_H, MEM_W, 255, MEM_D, 255 };
 static const uint8_t types_nv[4] = { MEM_B, MEM_H, MEM_W, 255 };
 
-static uint32_t iclass_3_V4LDST( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_3_V4LDST( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
 {
     uint32_t rs = REG_R( BITS(20:16) ), ru = REG_R( BITS(12:8) );
     uint32_t pv = REG_P( BITS(6:5) ),   rt = REG_R( BITS(4:0) );
@@ -571,7 +566,7 @@ static uint32_t iclass_3_V4LDST( uint32_t word, uint64_t extender, op_t **ops, u
     return 0;
 }
 
-static uint32_t iclass_4_V2LDST( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_4_V2LDST( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
     uint32_t code = BITS(23:21), code_nv = BITS(12:11);
@@ -641,7 +636,7 @@ static uint32_t iclass_4_V2LDST( uint32_t word, uint64_t extender, op_t **ops, u
     return 0;
 }
 
-static uint32_t iclass_5_J( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_5_J( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
 {
     uint32_t code1 = BITS(27:25), code2 = BITS(24:21);
     uint32_t rs32 = REG_R( BITS(20:16) ), pu4 = REG_P( BITS(9:8) );
@@ -712,7 +707,7 @@ static uint32_t iclass_5_J( uint32_t word, uint64_t extender, op_t **ops, uint32
     return 0;
 }
 
-static uint32_t iclass_6_CR( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_6_CR( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
 {
     uint32_t s2 = BITS(17:16), t2 = BITS(9:8), u2 = BITS(7:6), d2 = BITS(1:0);
     uint32_t s5 = BITS(20:16), d5 = BITS(4:0);
@@ -827,7 +822,7 @@ static uint32_t iclass_6_CR( uint32_t word, uint64_t extender, op_t **ops, uint3
     return 0;
 }
 
-static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), d5 = BITS(4:0);
     bool extended = extender != 0;
@@ -1006,7 +1001,7 @@ static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, u
     return 0;
 }
 
-static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
 {
     uint32_t code, s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
 
@@ -1378,7 +1373,7 @@ static const uint8_t mtypes_cl9[16][3] = {
     { MEM_W, 2, 0 },            { 255 },           { MEM_D, 3, 1 },            { 255 },
 };
 
-static uint32_t iclass_9_LD( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_9_LD( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), d5 = BITS(4:0);
     const uint8_t *mtype = mtypes_cl9[ BITS(24:21) ];
@@ -1476,7 +1471,7 @@ static uint32_t iclass_9_LD( uint32_t word, uint64_t extender, op_t **ops, uint3
     return 0;
 }
 
-static uint32_t iclass_9_LD_EXT( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_9_LD_EXT( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
 {
     // all instructions below must extend
     if( !extender ) return 0;
@@ -1515,7 +1510,7 @@ static uint32_t iclass_9_LD_EXT( uint32_t word, uint64_t extender, op_t **ops, u
     return 0;
 }
 
-static uint32_t iclass_10_ST( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_10_ST( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8);
     uint32_t code = BITS(23:21), code_nv = BITS(12:11);
@@ -1582,7 +1577,7 @@ static uint32_t iclass_10_ST( uint32_t word, uint64_t extender, op_t **ops, uint
     return 0;
 }
 
-static uint32_t iclass_10_ST_EXT( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_10_ST_EXT( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
 {
     // all instructions here must extend
     if( !extender ) return 0;
@@ -1632,7 +1627,7 @@ static uint32_t iclass_10_ST_EXT( uint32_t word, uint64_t extender, op_t **ops, 
     return 0;
 }
 
-static uint32_t iclass_11_ADDI( uint32_t word, uint64_t extender, op_t **ops, uint32_t &/*flags*/ )
+uint32_t hexagon_t::iclass_11_ADDI( uint32_t word, uint64_t extender, op_t **ops, uint32_t &/*flags*/ )
 {
     bool extended = extender != 0;
     // Rd32 = add(Rs32,#Ii)
@@ -1642,7 +1637,7 @@ static uint32_t iclass_11_ADDI( uint32_t word, uint64_t extender, op_t **ops, ui
     return Hex_add;
 }
 
-static uint32_t iclass_12_S3op( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_12_S3op( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
     uint32_t code = BITS(27:21);
@@ -1854,7 +1849,7 @@ static uint32_t iclass_12_S3op( uint32_t word, uint64_t /*extender*/, op_t **ops
     return code;
 }
 
-static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
 {
     uint32_t code, s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
     bool extended = extender != 0;
@@ -2236,7 +2231,7 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
     return 0;
 }
 
-static uint32_t iclass_14_M( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_14_M( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
 {
     if( BIT(13) != 0 ) return 0;
 
@@ -2575,7 +2570,7 @@ static uint32_t iclass_14_M( uint32_t word, uint64_t extender, op_t **ops, uint3
     return code;
 }
 
-static uint32_t iclass_15_ALU3op( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_15_ALU3op( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
     uint32_t code = BITS(27:21);
@@ -2669,7 +2664,7 @@ static uint32_t iclass_15_ALU3op( uint32_t word, uint64_t /*extender*/, op_t **o
 // system instructions parsing
 //
 
-static uint32_t iclass_5_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
+uint32_t hexagon_t::iclass_5_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
 
@@ -2718,7 +2713,7 @@ static uint32_t iclass_5_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, 
     return 0;
 }
 
-static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
+uint32_t hexagon_t::iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
 
@@ -2888,7 +2883,7 @@ static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, 
     return 0;
 }
 
-static uint32_t iclass_10_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
+uint32_t hexagon_t::iclass_10_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
 
@@ -2994,7 +2989,7 @@ static uint32_t iclass_10_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops,
 // HVX instructions parsing
 //
 
-static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
 {
     if( BIT(27) == 0 ) return 0;
 
@@ -3625,7 +3620,7 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
     return code;
 }
 
-static uint32_t iclass_1_ZReg( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_1_ZReg( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), u5 = BITS(12:8), d5 = BITS(4:0), t3 = BITS(18:16);
 
@@ -3656,7 +3651,7 @@ static uint32_t iclass_1_ZReg( uint32_t word, uint64_t /*extender*/, op_t **ops,
     return 0;
 }
 
-static uint32_t iclass_1_HVX_v68( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_1_HVX_v68( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
 {
     if( BITS(27:26) != 0b11 || BIT(13) != 1 )
         return 0;
@@ -3773,7 +3768,7 @@ static uint32_t iclass_1_HVX_v68( uint32_t word, uint64_t /*extender*/, op_t **o
     return code;
 }
 
-static uint32_t iclass_1_HVX_v69( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_1_HVX_v69( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), u5 = BITS(12:8), d5 = BITS(4:0);
 
@@ -3814,7 +3809,7 @@ static uint32_t iclass_1_HVX_v69( uint32_t word, uint64_t /*extender*/, op_t **o
     return 0;
 }
 
-static uint32_t iclass_2_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_2_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), u5 = BITS(12:8), d5 = BITS(4:0);
     uint32_t mu = BIT(13)? REG_M1 : REG_M0, p2 = BITS(12:11), mtype;
@@ -3971,7 +3966,7 @@ static uint32_t iclass_2_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
     return 0;
 }
 
-static uint32_t iclass_2_ZReg( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_2_ZReg( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
 {
     bool     has_pred = BIT(23), mem_inc = BIT(24), reg = BIT(0);
     uint32_t s5 = BITS(20:16), mu = BIT(13)? REG_M1 : REG_M0, p2 = BITS(12:11);
@@ -3998,7 +3993,7 @@ static uint32_t iclass_2_ZReg( uint32_t word, uint64_t /*extender*/, op_t **ops,
     return 0;
 }
 
-static uint32_t iclass_9_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
+uint32_t hexagon_t::iclass_9_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
 {
     uint32_t s5 = BITS(20:16), u5 = BITS(12:8), d5 = BITS(4:0);
 
@@ -4017,7 +4012,7 @@ static uint32_t iclass_9_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
 // HMX instructions parsing
 //
 
-static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
+uint32_t hexagon_t::iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
 {
     if( BITS(27:21) != 0b0010000 || BITS(7:6) != 0b11 )
         return 0;
@@ -4120,7 +4115,7 @@ static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
     return 0;
 }
 
-static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
+uint32_t hexagon_t::iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
 {
     if( BITS(27:21) != 0b0110111 || BITS(7:5) != 0 )
         return 0;
@@ -4201,7 +4196,7 @@ static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops,
 // DMA instructions parsing
 //
 
-static uint32_t iclass_9_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
+uint32_t hexagon_t::iclass_9_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
 {
     if( BITS(27:21) == 0b0010000 && BIT(13) == 0 && BITS(11:5) == 0b1000000 )
     {
@@ -4214,7 +4209,7 @@ static uint32_t iclass_9_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops, 
     return 0;
 }
 
-static uint32_t iclass_10_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+uint32_t hexagon_t::iclass_10_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
 {
     if( BIT(13) != 0 ) return 0;
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
@@ -4413,7 +4408,7 @@ static void simplify( insn_t &insn )
     }
 }
 
-static bool decode_single( insn_t &insn, uint32_t word, uint64_t extender )
+bool hexagon_t::decode_single( insn_t &insn, uint32_t word, uint64_t extender )
 {
     uint32_t iclass = BITS(31:28);
     uint32_t itype = 0, flags = 0;
@@ -4811,7 +4806,7 @@ static bool decode_duplex( insn_t &insn, uint32_t word, uint64_t extender )
 // analyze an instruction
 //
 
-ssize_t ana( insn_t &insn )
+ssize_t hexagon_t::ana( insn_t &insn )
 {
     ea_t ea = s_insn_ea = insn.ea;
     // instructions are always aligned on 4

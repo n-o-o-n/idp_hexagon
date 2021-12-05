@@ -24,7 +24,7 @@ void out_footer( outctx_t &ctx )
 {
     qstring nbuf = get_colored_name( inf_get_start_ea() );
     const char *name = nbuf.c_str();
-#if IDA_SDK_VERSION == 750
+#if IDA_SDK_VERSION >= 750
     asm_t &ash = ctx.ash;
 #endif
     const char *end = ash.end;
@@ -416,6 +416,7 @@ static uint32_t hex_out_predicate( outctx_t &ctx, uint32_t ptype, uint32_t op_id
 
 static uint32_t hex_out_insn( outctx_t &ctx, uint32_t itype, uint32_t flags, uint32_t op_idx )
 {
+    uint16_t idpflags = out_get_idpflags(ctx);
     // output predicate
     if( (flags & PRED_MASK) != PRED_NONE )
         op_idx = hex_out_predicate( ctx, flags & PRED_MASK, op_idx );
@@ -497,6 +498,8 @@ static bool is_single( const insn_t insn )
 }
 static void out_pkt_beg( outctx_t &ctx )
 {
+    uint16_t idpflags = out_get_idpflags(ctx);
+
     if( !(idpflags & HEX_BRACES_FOR_SINGLE) && is_single( ctx.insn ) )
         ctx.out_line( "  ", COLOR_SYMBOL );
     else if( (idpflags & HEX_OBRACE_ALONE) )
@@ -510,6 +513,8 @@ static void out_pkt_beg( outctx_t &ctx )
 
 static void out_pkt_end( outctx_t &ctx )
 {
+    uint16_t idpflags = out_get_idpflags(ctx);
+
     if( !(idpflags & HEX_BRACES_FOR_SINGLE) && is_single( ctx.insn ) )
         return;
     if( (idpflags & HEX_CBRACE_ALONE) )
@@ -533,6 +538,8 @@ static void out_pkt_end( outctx_t &ctx )
 // output an instruction and its operands
 void out_insn( outctx_t &ctx )
 {
+    uint16_t idpflags = out_get_idpflags(ctx);
+
     if( (ctx.insn.flags & INSN_PKT_BEG) )
         out_pkt_beg( ctx );
     else

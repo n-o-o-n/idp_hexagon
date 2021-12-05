@@ -6,10 +6,9 @@
 ------------------------------------------------------------------------------*/
 #include "common.h"
 
-// configuration flags
-uint16_t idpflags = HEX_BRACES_FOR_SINGLE | HEX_CR_FOR_DUPLEX;
+int data_id;
 
-static const char* set_idp_options( const char *keyword, int value_type, const void *value )
+const char* hexagon_t::set_idp_options( const char *keyword, int value_type, const void *value )
 {
     if( !keyword )
     {
@@ -93,7 +92,15 @@ Hexagon specific options
     }
 }
 
-static ssize_t idaapi notify( void*, int notification_code, va_list va )
+// This old-style callback only returns the processor module object.
+static ssize_t idaapi notify(void *, int notification_code, va_list)
+{
+    if ( notification_code == processor_t::ev_get_procmod )
+        return size_t(SET_MODULE_DATA(hexagon_t));
+    return 0;
+}
+
+ssize_t idaapi hexagon_t::on_event(ssize_t notification_code, va_list va)
 {
     switch( notification_code )
     {
@@ -181,12 +188,12 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
         return 1;
     }
     case processor_t::ev_realcvt: {
-        // must be implemented for floats to work
-        auto m = va_arg( va, void* );
-        auto e = va_arg( va, uint16* );
-        auto swt = va_argi( va, uint16 );
-        int code = ieee_realcvt( m, e, swt );
-        return code == 0? 1 : code;
+        // must be implemented for floats to work ?
+        void *m = va_arg(va, void *);
+        fpvalue_t *e = va_arg(va, fpvalue_t *);
+        uint16 swt = va_argi(va, uint16);
+        fpvalue_error_t code1 = ieee_realcvt(m, e, swt);
+        return code1 == REAL_ERROR_OK ? 1 : code1;
     }
     //
     // type information callbacks

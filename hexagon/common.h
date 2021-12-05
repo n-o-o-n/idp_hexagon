@@ -18,7 +18,6 @@
 #endif
 
 // configuration flags
-extern uint16_t idpflags;
 enum {
     HEX_OBRACE_ALONE        = (1 << 0),
     HEX_CBRACE_ALONE        = (1 << 1),
@@ -30,7 +29,6 @@ uint32_t get_num_ops( uint32_t itype, uint32_t flags );
 const char *get_insn_template( uint32_t itype );
 ea_t find_packet_end( ea_t ea );
 ssize_t loader_elf_machine( linput_t *li, int machine_type, const char **p_procname, proc_def_t **p_pd );
-ssize_t ana( insn_t &insn );
 ssize_t emu( const insn_t &insn );
 bool hex_is_call_insn( const insn_t &insn );
 bool hex_is_ret_insn( const insn_t &insn, bool strict );
@@ -55,4 +53,63 @@ int hex_use_regarg_type( ea_t ea, const funcargvec_t &rargs );
 static inline ea_t  inf_get_start_ea()  { return inf.start_ea; }
 static inline uchar inf_get_cc_size_l() { return inf.cc.size_l; }
 static inline uchar inf_get_cc_size_e() { return inf.cc.size_e; }
+
 #endif
+
+//IDAv7.6+ multiple instance support.
+//Older versions can instantiate a single object at start and direct all calls to it. TODO: does procmod_t exist in older versions?
+struct hexagon_t : public procmod_t {
+    //convert all globals to members
+    // configuration flags
+    uint16_t idpflags = HEX_BRACES_FOR_SINGLE | HEX_CR_FOR_DUPLEX;
+    // start of current instruction packet (PC value)
+    ea_t s_pkt_start;
+    // current instruction address
+    ea_t s_insn_ea;
+
+    //convert all funcs using ex-globals to members
+    ssize_t idaapi on_event(ssize_t notification_code, va_list va);
+
+    const char* set_idp_options( const char *keyword, int value_type, const void *value );
+    //ana-related
+    ssize_t ana( insn_t &insn );
+    bool decode_single( insn_t &insn, uint32_t word, uint64_t extender );
+    uint32_t new_value( uint32_t nt, bool hvx = false );
+    void add_pcrel( op_t **ops, int32_t offset );
+    uint32_t iclass_1_CJ( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags );
+    uint32_t iclass_2_NCJ( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags );
+    uint32_t iclass_3_V4LDST( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags );
+    uint32_t iclass_4_V2LDST( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags );
+    uint32_t iclass_5_J( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags );
+    uint32_t iclass_6_CR( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags );
+    uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags );
+    uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags );
+    uint32_t iclass_9_LD( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags );
+    uint32_t iclass_9_LD_EXT( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags );
+    uint32_t iclass_10_ST( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags );
+    uint32_t iclass_10_ST_EXT( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags );
+    uint32_t iclass_11_ADDI( uint32_t word, uint64_t extender, op_t **ops, uint32_t &/*flags*/ );
+    uint32_t iclass_12_S3op( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags );
+    uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags );
+    uint32_t iclass_14_M( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags );
+    uint32_t iclass_15_ALU3op( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags );
+    uint32_t iclass_5_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ );
+    uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ );
+    uint32_t iclass_10_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ );
+    uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags );
+    uint32_t iclass_1_ZReg( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags );
+    uint32_t iclass_1_HVX_v68( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags );
+    uint32_t iclass_1_HVX_v69( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags );
+    uint32_t iclass_2_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags );
+    uint32_t iclass_2_ZReg( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags );
+    uint32_t iclass_9_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ );
+    uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ );
+    uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ );
+    uint32_t iclass_9_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ );
+    uint32_t iclass_10_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags );
+
+};
+
+static inline uint16_t out_get_idpflags(outctx_t &ctx) {  return static_cast<hexagon_t *>(ctx.procmod)->idpflags; }
+extern int data_id;
+

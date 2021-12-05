@@ -395,13 +395,14 @@ ssize_t loader_elf_machine( linput_t*, int machine_type, const char**, proc_def_
     // b) replace vft in the existing proc_def_t object at *p_pd
 
     // ****** WARNING: dirty hack ******:
+    /*
     static uintptr_t vft[21];
     memcpy( vft, **(uintptr_t***)p_pd, sizeof(vft) );
     vft[2] = (uintptr_t) proc_handle_reloc;
     vft[7] = (uintptr_t) proc_describe_flag_bit;
     vft[9] = (uintptr_t) proc_handle_dynamic_tag;
     **(uintptr_t***)p_pd = vft;
-
+    */
     return machine_type;
 }
 

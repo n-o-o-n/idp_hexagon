@@ -13,6 +13,55 @@
 // for more information, see [80-N2040-23] "Qualcomm Hexagon ABI", section 12.4
 //
 
+#if IDA_SDK_VERSION < 750
+
+// base address of small data area, used for GP-relative relocations
+static uint32_t _SDA_BASE_ = 0;
+// base address for thread-local relocations
+static uint32_t _TLS_START_ = 0;
+// address of global offset table
+static uint32_t _GOT_ = 0;
+// address of procedure linkage table
+static uint32_t _PLT_ = 0;
+// base address for message base optimization
+static uint32_t _MSG_BASE_ = 0;
+
+#else
+
+struct elf_hexagon_t : public proc_def_t
+{
+    // base address of small data area, used for GP-relative relocations
+    uint32_t _SDA_BASE_ = 0;
+    // base address for thread-local relocations
+    uint32_t _TLS_START_ = 0;
+    // address of global offset table
+    uint32_t _GOT_ = 0;
+    // address of procedure linkage table
+    uint32_t _PLT_ = 0;
+    // base address for message base optimization
+    uint32_t _MSG_BASE_ = 0;
+
+    elf_hexagon_t(elf_loader_t &l, reader_t &r) : proc_def_t(l, r) {}
+
+    virtual const char *proc_handle_reloc(
+        const rel_data_t &rel_data,
+        const sym_rel *symbol,
+        const elf_rela_t *reloc,
+        reloc_tools_t *tools) override; //add real func
+
+    // Return a bit description from e_flags and remove it.
+    // This function may be called in a loop to document all bits.
+    virtual const char *proc_describe_flag_bit(uint32 *e_flags) override; //add real func
+
+    // called for each dynamic tag. It returns NULL to continue with a
+    // standard tag processing, or "" to finish tag processing, or the
+    // description of the tag to show.
+    virtual const char *proc_handle_dynamic_tag(const Elf64_Dyn *dyn) override; //add real func
+
+};
+
+#endif
+
 enum {
     // fixed relocation masks
     LO_MASK         = 0x00c03fff,
@@ -27,19 +76,12 @@ enum {
     X26_MASK        = 0x0fff3fff,
 };
 
-// base address of small data area, used for GP-relative relocations
-static uint32_t _SDA_BASE_ = 0;
-// base address for thread-local relocations
-static uint32_t _TLS_START_ = 0;
-// address of global offset table
-static uint32_t _GOT_ = 0;
-// address of procedure linkage table
-static uint32_t _PLT_ = 0;
-// base address for message base optimization
-static uint32_t _MSG_BASE_ = 0;
-
 // process e_flags field of ELF header
-static const char* proc_describe_flag_bit( proc_def_t* /*self*/, uint32 *e_flags )
+#if IDA_SDK_VERSION < 750
+    static const char* proc_describe_flag_bit( proc_def_t* /*self*/, uint32 *e_flags )
+#else
+    const char*elf_hexagon_t::proc_describe_flag_bit( uint32 *e_flags )
+#endif
 {
     const char *opts = NULL;
     switch( *e_flags ) {
@@ -140,6 +182,8 @@ static uint32_t apply_mask( uint32_t v, uint32_t mask )
 //    without creating any table entries
 //
 
+#if IDA_SDK_VERSION < 750
+
 static const char* proc_handle_reloc(
     proc_def_t* /*self*/,
     const rel_data_t &rel_data,
@@ -147,6 +191,17 @@ static const char* proc_handle_reloc(
     const elf_rela_t* /*reloc*/,
     reloc_tools_t* /*tools*/
     )
+
+#else
+
+const char* elf_hexagon_t::proc_handle_reloc(
+    const rel_data_t &rel_data,
+    const sym_rel *symbol,
+    const elf_rela_t* /*reloc*/,
+    reloc_tools_t* /*tools*/
+    )
+
+#endif
 {
     // msg( "rel @0x%X: type=%2d, Sadd=0x%X, S=0x%X, sym=%s\n",
     //      rel_data.P, rel_data.type, rel_data.Sadd, rel_data.S, symbol->original_name );
@@ -161,6 +216,7 @@ static const char* proc_handle_reloc(
     case R_HEX_GOTREL_32:
     case R_HEX_JMP_SLOT:
     case R_HEX_RELATIVE:
+    case R_HEX_COPY:
         put_dword( rel_data.P, rel_data.Sadd );
         goto __fixup;
     case R_HEX_16:
@@ -306,7 +362,11 @@ __fixup:
     return NULL; // ok
 }
 
-static const char* proc_handle_dynamic_tag( proc_def_t* /*self*/, const Elf64_Dyn *dyn )
+#if IDA_SDK_VERSION < 750
+    static const char* proc_handle_dynamic_tag( proc_def_t* /*self*/, const Elf64_Dyn *dyn )
+#else    
+    const char* elf_hexagon_t::proc_handle_dynamic_tag( const Elf64_Dyn *dyn )
+#endif    
 {
     switch( dyn->d_tag )
     {
@@ -390,19 +450,9 @@ ssize_t loader_elf_machine( linput_t*, int machine_type, const char**, proc_def_
 {
     // tell ELF loader to use our mini-plugin for processor-specific stuff
     assert( machine_type == EM_QDSP6 );
-    // as proc_def_t's functions are not exported, there are two options:
-    // a) manually re-implement all missing functions
-    // b) replace vft in the existing proc_def_t object at *p_pd
-
-    // ****** WARNING: dirty hack ******:
-    /*
-    static uintptr_t vft[21];
-    memcpy( vft, **(uintptr_t***)p_pd, sizeof(vft) );
-    vft[2] = (uintptr_t) proc_handle_reloc;
-    vft[7] = (uintptr_t) proc_describe_flag_bit;
-    vft[9] = (uintptr_t) proc_handle_dynamic_tag;
-    **(uintptr_t***)p_pd = vft;
-    */
+    proc_def_t *pd = *p_pd;
+    elf_hexagon_t *elf_hex = new elf_hexagon_t(pd->ldr, pd->reader);
+    *p_pd = elf_hex;
     return machine_type;
 }
 

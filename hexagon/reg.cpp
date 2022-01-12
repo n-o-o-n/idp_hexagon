@@ -93,10 +93,31 @@ Hexagon specific options
     }
 }
 
+#if IDA_SDK_VERSION >= 750
+static ssize_t idaapi notify( void*, int notification_code, va_list va );
+
+struct hexagon_t : public procmod_t
+{
+    ssize_t idaapi on_event(ssize_t code, va_list va) override
+    {
+        return notify( NULL, code, va );
+    }
+};
+
+static hexagon_t procmod;
+#endif
+
 static ssize_t idaapi notify( void*, int notification_code, va_list va )
 {
     switch( notification_code )
     {
+#if IDA_SDK_VERSION >= 750
+    case processor_t::ev_get_procmod: {
+        // while the intent was noble, IDA still keeps only a single procmod_t object
+        // corresponding to a single value of data_id, so why bother?
+        return (ssize_t) &procmod;
+    }
+#endif
     case processor_t::ev_set_idp_options: {
         auto keyword = va_arg( va, const char* );
         auto value_type = va_arg( va, int );
@@ -183,7 +204,7 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
     case processor_t::ev_realcvt: {
         // must be implemented for floats to work
         auto m = va_arg( va, void* );
-        auto e = va_arg( va, uint16* );
+        auto e = va_arg( va, fpvalue_t* );
         auto swt = va_argi( va, uint16 );
         int code = ieee_realcvt( m, e, swt );
         return code == 0? 1 : code;
@@ -201,7 +222,7 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
     }
     case processor_t::ev_get_cc_regs: {
         auto regs = va_arg( va, callregs_t* );
-        auto cc = va_arg( va, cm_t );
+        auto cc = va_argi( va, cm_t );
         hex_get_cc_regs( cc, *regs );
         return 1;
     }
@@ -216,7 +237,7 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
     case processor_t::ev_calc_retloc: {
         auto retloc = va_arg( va, argloc_t* );
         auto rettype = va_arg( va, const tinfo_t* );
-        auto cc = va_arg( va, cm_t );
+        auto cc = va_argi( va, cm_t );
         return hex_calc_retloc( cc, *rettype, *retloc )? 1 : -1;
     }
     case processor_t::ev_use_arg_types: {
@@ -332,7 +353,7 @@ static const char *const reg_names[] = {
 // * potentially this array must be nearly 1MB in size, but even then
 //   it won't work for duplex instructions;
 // * IDA will read past the end of this array, returning random xref type (dr_W or dr_R)
-static const instruc_t dummy_insn[1] = { 0 };
+static const instruc_t dummy_insn[1] = {{ 0 }};
 
 //-----------------------------------------------------------------------
 //      Processor Definition

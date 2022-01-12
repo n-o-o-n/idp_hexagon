@@ -56,3 +56,6 @@ static inline ea_t  inf_get_start_ea()  { return inf.start_ea; }
 static inline uchar inf_get_cc_size_l() { return inf.cc.size_l; }
 static inline uchar inf_get_cc_size_e() { return inf.cc.size_e; }
 #endif
+#if IDA_SDK_VERSION < 760
+typedef uint16 fpvalue_t;
+#endif

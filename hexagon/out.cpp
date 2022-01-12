@@ -24,7 +24,7 @@ void out_footer( outctx_t &ctx )
 {
     qstring nbuf = get_colored_name( inf_get_start_ea() );
     const char *name = nbuf.c_str();
-#if IDA_SDK_VERSION == 750
+#if IDA_SDK_VERSION >= 750
     asm_t &ash = ctx.ash;
 #endif
     const char *end = ash.end;

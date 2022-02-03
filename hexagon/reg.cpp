@@ -104,7 +104,7 @@ struct hexagon_t : public procmod_t
     }
 };
 
-static hexagon_t procmod;
+static int data_id;
 #endif
 
 static ssize_t idaapi notify( void*, int notification_code, va_list va )
@@ -113,9 +113,7 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
     {
 #if IDA_SDK_VERSION >= 750
     case processor_t::ev_get_procmod: {
-        // while the intent was noble, IDA still keeps only a single procmod_t object
-        // corresponding to a single value of data_id, so why bother?
-        return (ssize_t) &procmod;
+        return size_t(SET_MODULE_DATA(hexagon_t));
     }
 #endif
     case processor_t::ev_set_idp_options: {

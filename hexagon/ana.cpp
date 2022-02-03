@@ -4833,6 +4833,9 @@ ssize_t ana( insn_t &insn )
         // read next instruction
         word = get_dword( ea += 4 );
         parse = BITS(15:14);
+        // check if ea is still valid
+        if( getseg( ea ) == 0 )
+            return 0;
     }
     else {
         // usually all instructions are 4 bytes long

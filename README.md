@@ -14,7 +14,7 @@ Information on instructions was mainly gathered from [LLVM](https://github.com/l
 
 Compilation
 -----------
-You will need the target IDA SDK ([7.0](https://www.hex-rays.com/products/ida/support/ida/idasdk70.zip), [7.2](https://www.hex-rays.com/products/ida/support/ida/idasdk72.zip), [7.3](https://www.hex-rays.com/products/ida/support/ida/idasdk73.zip), [7.5](https://www.hex-rays.com/products/ida/support/ida/idasdk75.zip), [7.6](https://www.hex-rays.com/products/ida/support/ida/idasdk76.zip)) (password protected).  
+You will need the target IDA SDK ([7.0](https://hex-rays.com/products/ida/support/ida/idasdk70.zip), [7.2](https://hex-rays.com/products/ida/support/ida/idasdk72.zip), [7.3](https://hex-rays.com/products/ida/support/ida/idasdk73.zip), [7.5](https://hex-rays.com/products/ida/support/ida/idasdk75.zip), [7.6](https://hex-rays.com/products/ida/support/ida/idasdk76.zip)) (password protected).  
 You will also need a C++17 compiler, like Visual Studio 2015/2017/2022, or any recent GCC or Clang.
 
 Install target IDA SDK, copy `hexagon` folder into $SDK/module folder, and modify $SDK/module/makefile to include hexagon in `ALLDIRS`.  
@@ -80,3 +80,4 @@ History
 2021-07-12 fixed crash related to xref to a stack variable; removed PR_ALIGN flag  
 2021-08-13 added support for Hexagon v69 and v71; version 4.0 released  
 2022-01-12 added support for IDA v7.6  
+2022-02-03 fixed two crashes  

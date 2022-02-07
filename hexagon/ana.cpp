@@ -44,35 +44,46 @@ static ea_t s_insn_ea;
 
 ea_t find_packet_end( ea_t ea )
 {
+    // returns address of the start of next packet
+    // align on dwords
+    ea &= ~2;
     // scan instructions forward in order to find the packet end
-    // packet can have max 4 words including the current one, and we don't check the last word
+    // packet can have max 4 dwords including the current one, and we don't check the last dword
     for( ea_t end = ea + 8; ea <= end; ea += 4 )
     {
         uint32_t parse = PARSE(get_dword( ea ));
         if( parse == PARSE_LAST || parse == PARSE_DUPLEX )
             break;
     }
-    return ea;
+    return ea + 4;
 }
 
-static ea_t find_packet_boundaries( ea_t ea, ea_t *pkt_end )
+static bool find_packet_boundaries( ea_t ea, ea_t *pkt_start, ea_t *pkt_end )
 {
-    // scan instructions backwards in order to find the packet start
+    // returns starting addresses of this and of the next packets
     // WARNING: the result may be wrong in case of mixed instructions and data
-    ea_t start = getseg( ea )->start_ea, end = find_packet_end( ea );
+    auto seg = getseg( ea );
+    if( !seg ) return false;
+    // align on dwords
+    ea &= ~2;
+    ea_t start = seg->start_ea, end = find_packet_end( ea );
     *pkt_end = end;
-    // packet can have max 4 words from the end
-    if( end > start + 12 ) start = end - 12;
-
+    // packets contain max 4 dwords
+    if( end > start + 16 ) start = end - 16;
+    // scan instructions backwards in order to find the packet start
     while( ea > start )
     {
         ea -= 4;
         // end of packet?
         uint32_t parse = PARSE(get_dword( ea ));
         if( parse == PARSE_LAST || parse == PARSE_DUPLEX )
-            return ea + 4;
+        {
+            *pkt_start = ea + 4;
+            return true;
+        }
     }
-    return ea;
+    *pkt_start = ea;
+    return true;
 }
 
 static uint32_t get_endloop( ea_t pkt_ea )
@@ -91,38 +102,11 @@ static uint32_t get_endloop( ea_t pkt_ea )
     return flags;
 }
 
-// NB: regenerate if instructions or their order changes!
-static const uint8_t num_ops[] = {
-    32, 67, 51, 67, 68, 36, 67, 51, 36, 35, 35, 51, 51, 34, 34, 35,
-    51, 51, 34, 35, 67, 67, 51, 36, 51, 35, 51, 51, 51, 35, 36, 32,
-    50, 52, 67, 51, 50, 50, 34, 51, 51, 51, 51, 36, 34, 66, 51, 35,
-    18, 17, 17, 53, 37, 50, 51, 18,  2,  2,  0, 17, 17, 17, 34,  1,
-    18, 48, 17, 33, 33, 49, 17,  1, 34, 34, 33, 18, 32,  2, 16,  1,
-     1,  1,  1, 34, 18, 19,  1, 34, 17, 17,  1, 34,  2, 18, 51, 51,
-    51, 51, 51, 51, 34, 34, 34, 34, 34, 34, 34, 34, 34, 51, 35, 51,
-    51, 51, 51, 51, 51, 50, 50, 51, 68, 51, 34, 52, 51, 51, 52, 51,
-    51, 51, 51, 51, 35, 51, 51, 51, 51, 51, 51, 51, 51, 67, 51, 51,
-    51, 51, 51, 51, 52, 51, 51, 51, 51, 52, 51, 51, 51, 50, 34, 34,
-    34, 52, 51, 35, 34, 51, 50, 51, 51, 35, 34, 34, 17, 17, 17, 17,
-    34, 51, 68, 67, 51, 67, 51, 35, 35, 67, 51, 67, 51,  4, 33, 52,
-    68, 51, 51, 51, 51, 51, 51, 67, 35, 50, 51, 35, 51, 52, 51, 52,
-    67, 33, 34, 67, 51, 35, 67, 68, 50, 34, 16,  2, 49, 50, 51, 35,
-    36, 51, 35,  2,  2,
-};
-
-uint32_t get_num_ops( uint32_t itype, uint32_t flags )
-{
-    // returns number of operands for a given instruction
-    // for example, Hex_add uses three (%0 = add(%1,%2))
-    // used to get to 2nd half of duplex instructions
-    assert( itype < sizeof(num_ops) * 2 );
-    return get_op_index( flags ) + ((num_ops[ itype >> 1 ] >> 4 * (itype & 1)) & 0xF);
-}
-
 static bool is_hvx( const insn_t &insn )
 {
     // return true if this is a HVX instruction
-    if( (insn.flags & INSN_DUPLEX) ) return false;
+    if( (insn.flags & INSN_DUPLEX) )
+        return false;
     if( Hex_HVX_FIRST <= insn.itype && insn.itype <= Hex_HVX_LAST )
         return true;
     if( insn.ops[0].type == o_reg && IN_RANGE(insn.ops[0].reg, REG_V0, REG_VTMP) ||
@@ -136,7 +120,7 @@ static uint32_t new_value( uint32_t nt, bool hvx = false )
     if( nt >= 8 || (nt & 6) == 0 ) return ~0u;
     // we're going to parse other instructions, so save globals
     ea_t saved_pkt_start = s_pkt_start, saved_ea = s_insn_ea, ea = s_insn_ea;
-    uint32_t offset = (nt & 6) >> 1, result = ~0u, i;
+    uint32_t offset = (nt & 6) >> 1, result = ~0u;
     insn_t temp;
 
     // scan instructions up until the start of packet
@@ -158,21 +142,21 @@ static uint32_t new_value( uint32_t nt, bool hvx = false )
     }
     // we got the producer, find out the operand
     // TODO: check if duplexes have to be supported
-    i = get_op_index( insn_flags( temp ) );
-    assert( temp.ops[i].type == o_reg );
+    const op_t *op = insn_ops( temp );
+    assert( op->type == o_reg );
     if( !hvx )
     {
         assert( (nt & 1) == 0 );
-        result = temp.ops[i].reg;
+        result = op->reg;
     }
     else // hvx
     {
         // a pair of vector registers?
-        if( IN_RANGE(temp.ops[i].reg, REG_V0, REG_V0 + 31) && (temp.ops[i].specval & REG_DOUBLE) )
-            result = temp.ops[i].reg ^ (nt & 1);
+        if( IN_RANGE(op->reg, REG_V0, REG_V0 + 31) && (op->specval & REG_DOUBLE) )
+            result = op->reg ^ (nt & 1);
         else
             // some instructions produce 2 output registers
-            result = temp.ops[i + (nt & 1)].reg;
+            result = op[(nt & 1)].reg;
     }
 
 __cleanup:
@@ -4299,7 +4283,7 @@ static uint32_t iclass_10_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops,
 
 static void simplify( insn_t &insn )
 {
-    op_t *ops = insn.ops + get_op_index( insn_flags( insn ) );
+    op_t *ops = insn_ops( insn );
 
     switch( insn.itype )
     {
@@ -4486,8 +4470,7 @@ static bool decode_single( insn_t &insn, uint32_t word, uint64_t extender )
 
     if( !itype ) return false;
     insn.itype = itype;
-    insn.auxpref_u16[0] = (uint16_t) flags;
-    insn.segpref = flags >> 16;
+    insn.auxpref = flags;
     // simplify instruction if possible
     simplify( insn );
     return true;
@@ -4765,6 +4748,7 @@ static uint8_t duplex_A( uint32_t word, uint64_t extender, op_t **ops, uint32_t 
 
 typedef uint8_t (*duplex_parser)( uint32_t, uint64_t, op_t**, uint32_t& );
 static const duplex_parser dp[15][2] = {
+    // class        low       high
     /*  0*/ { duplex_L1, duplex_L1 },
     /*  1*/ { duplex_L2, duplex_L1 },
     /*  2*/ { duplex_L2, duplex_L2 },
@@ -4785,24 +4769,26 @@ static const duplex_parser dp[15][2] = {
 static bool decode_duplex( insn_t &insn, uint32_t word, uint64_t extender )
 {
     uint32_t dclass = (BITS(31:29) << 1) | BIT(13);
-    uint32_t insn_low = BITS(12:0), insn_high = BITS(28:16);
-    uint32_t flags_low = 0, flags_high = 0;
-    if( dclass == 15 ) return false; // reserved
-
+    uint32_t itype, flags = 0;
     op_t *ops = insn.ops;
-    // parse two sub-instructions
-    duplex_parser parse_low = dp[dclass][0], parse_high = dp[dclass][1];
-    // constant extenders in duplex must always be in slot 1
-    insn_high = parse_high( insn_high, extender, &ops, flags_high );
-    if( !insn_high ) return false;
-    insn_low = parse_low( insn_low, 0, &ops, flags_low );
-    if( !insn_low ) return false;
-    // pack instruction opcodes and flags
-    insn.itype = (insn_high << 8) | insn_low;
-    insn.auxpref_u16[0] = (uint16_t) flags_low;
-    insn.segpref = flags_low >> 16;
-    insn.auxpref_u16[1] = (uint16_t) flags_high;
-    insn.insnpref = flags_high >> 16;
+
+    // duplex class 15 is reserved
+    if( dclass == 15 ) return false;
+    // TODO: check that other half is decodable as well
+    if( (insn.ea & 2) == 0 )
+    {
+        // parse high sub-instruction
+        itype = dp[dclass][1]( BITS(28:16), extender, &ops, flags );
+    }
+    else
+    {
+        // parse low sub-instruction (w/o extender)
+        itype = dp[dclass][0]( BITS(12:0), 0, &ops, flags );
+    }
+
+    if( !itype ) return false;
+    insn.itype = itype;
+    insn.auxpref = flags;
     insn.flags |= INSN_DUPLEX;
     return true;
 }
@@ -4815,44 +4801,48 @@ ssize_t ana( insn_t &insn )
 {
     ea_t ea = s_insn_ea = insn.ea;
     // instructions are always aligned on 4
-    if( (insn.ea & 3) ) return 0;
+    if( (ea & 1) )
+        return 0;
 
-    uint32_t word = get_dword( ea );
+    uint32_t word = get_dword( ea & ~2 );
     uint32_t parse = BITS(15:14), iclass = BITS(31:28);
     uint64_t extender = 0;
+
+    // ... with the exception of 2nd word of duplex
+    if( (ea & 2) && parse != PARSE_DUPLEX )
+        return 0;
 
     // is it a constant extender?
     if( parse != PARSE_DUPLEX && iclass == 0 )
     {
+        // extender cannot be the last insn in the packet
         if( parse == PARSE_LAST ) return 0;
         // use 32nd bit to distinguish between no extender and a zero extender
         extender = (1ull << 32) | (BITS(27:16) << 20) | (BITS(13:0) << 6);
         // extender always extends the next instruction, so lets absorb it
-        insn.size = 8;
         insn.flags |= INSN_EXTENDED;
         // read next instruction
         word = get_dword( ea += 4 );
         parse = BITS(15:14);
-        // check if ea is still valid
-        if( getseg( ea ) == 0 )
-            return 0;
     }
-    else {
-        // usually all instructions are 4 bytes long
-        insn.size = 4;
-    }
-    // set packet flags
+
+    // instructions are either 4 or 2 bytes long plus optional extender
+    insn.size = (extender? 4 : 0) + (parse == PARSE_DUPLEX? 2 : 4);
+
     ea_t pkt_end;
-    s_pkt_start = find_packet_boundaries( ea, &pkt_end );
-    insn.flags |= INSN_BEG_OFF( (insn.ea - s_pkt_start) >> 2 ) |
-                  INSN_END_OFF( (pkt_end - insn.ea) >> 2 );
+    if( !find_packet_boundaries( ea, &s_pkt_start, &pkt_end ) )
+        return 0;
+    // set offsets (in bytes) to the packet start/end
+    insn.segpref = insn.ea - s_pkt_start;
+    insn.insnpref = pkt_end - insn.ea;
+    // set packet flags
     if( insn.ea == s_pkt_start )
         insn.flags |= INSN_PKT_BEG;
-    if( parse == PARSE_LAST || parse == PARSE_DUPLEX )
+    if( insn.ea + insn.size == pkt_end )
         insn.flags |= INSN_PKT_END | get_endloop( s_pkt_start );
 
     // decode instruction word
-    bool decoded = parse == PARSE_DUPLEX?
+    bool decoded = (parse == PARSE_DUPLEX)?
         decode_duplex( insn, word, extender ) :
         decode_single( insn, word, extender );
     // if( !decoded )

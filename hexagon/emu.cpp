@@ -8,41 +8,12 @@
 
 static bool hex_is_switch( const insn_t &insn, switch_info_t *si );
 
-// Ideally the duplex instructions should be represented as two individual insn_t.
-// But this would conflict with the way how IDA associates instructions with physical addresses (EAs),
-// because in duplex instructions the logically "first" sub-instruction is at a higher address.
-// The compound insn_t makes it difficult to enumerate the stream of instructions.
-// Hence the template below:
-
-template <typename Visitor, typename ...Args>
-static __inline bool visit_sub_insn( const insn_t &insn, Visitor visitor, Args... args )
-{
-    if( (insn.flags & INSN_DUPLEX) )
-    {
-        const op_t *ops = insn.ops;
-        uint32_t itype = sub_insn_code( insn, 1 ), flags = insn_flags( insn, 1 );
-        if( visitor( itype, flags, ops, args... ) )
-            return true;
-        ops += get_num_ops( itype, flags );
-        itype = sub_insn_code( insn, 0 ), flags = insn_flags( insn, 0 );
-        return visitor( itype, flags, ops, args... );
-    }
-    else
-        return visitor( insn.itype, insn_flags( insn ), insn.ops, args... );
-}
-
 static bool is_ret_or_jump( const insn_t &insn )
 {
     // returns true if it's an unconditional jump or return
-    if( (insn.flags & INSN_DUPLEX) )
-    {
-        uint32_t ins_lo = sub_insn_code( insn, 0 ), ins_hi = sub_insn_code( insn, 1 );
-        return (ins_lo == Hex_return || ins_lo == Hex_jumpr) && (insn_flags( insn, 0 ) & PRED_MASK) == 0 ||
-               (ins_hi == Hex_return || ins_hi == Hex_jumpr) && (insn_flags( insn, 1 ) & PRED_MASK) == 0;
-    }
     return (insn.itype == Hex_jump || insn.itype == Hex_jumpr || insn.itype == Hex_set_jump ||
             insn.itype == Hex_return_raw || insn.itype == Hex_return) &&
-           (insn_flags( insn, 0 ) & PRED_MASK) == 0;
+            insn_predicate( insn ) == 0;
 }
 
 static bool hex_is_basic_block_end( const insn_t &insn )
@@ -79,12 +50,13 @@ static bool hex_is_basic_block_end( const insn_t &insn )
     return res;
 }
 
-static void handle_insn( const insn_t &insn, uint32_t itype, uint32_t flags, const op_t *ops )
+static void handle_insn( const insn_t &insn )
 {
+    const op_t *ops = insn.ops;
     func_t *pfn = get_func( insn.ea );
     flags_t F;
 
-    switch( itype )
+    switch( insn.itype )
     {
     case Hex_allocframe:
         // add SP change point
@@ -97,7 +69,7 @@ static void handle_insn( const insn_t &insn, uint32_t itype, uint32_t flags, con
         break;
 
     case Hex_add:
-        ops += get_op_index( flags );
+        ops = insn_ops( insn );
         F = get_flags( insn.ea );
         if( !ops[0].is_reg( REG_SP ) && ops[1].is_reg( REG_SP ) &&
             pfn && may_create_stkvars() && !is_defarg( F, ops[2].n ) )
@@ -121,7 +93,7 @@ static void handle_insn( const insn_t &insn, uint32_t itype, uint32_t flags, con
         break;
 
     case Hex_jumpr:
-        if( (flags & PRED_MASK) == 0 && !ops[0].is_reg( REG_LR ) )
+        if( insn_predicate( insn ) == 0 && !ops[0].is_reg( REG_LR ) )
         {
             switch_info_t si;
             if( hex_is_switch( insn, &si ) )
@@ -214,17 +186,7 @@ ssize_t emu( const insn_t &insn )
     else if( get_auto_state() == AU_USED )
         recalc_spd( insn.ea );
 
-    if( (insn.flags & INSN_DUPLEX) )
-    {
-        const op_t *ops = insn.ops;
-        uint32_t itype = sub_insn_code( insn, 1 ), flags = insn_flags( insn, 1 );
-        handle_insn( insn, itype, flags, ops );
-        ops += get_num_ops( itype, flags );
-        itype = sub_insn_code( insn, 0 ), flags = insn_flags( insn, 0 );
-        handle_insn( insn, itype, flags, ops );
-    }
-    else
-        handle_insn( insn, insn.itype, insn_flags( insn ), insn.ops );
+    handle_insn( insn );
 
     for( int i = 0; i < _countof(insn.ops); i++ )
         handle_operand( insn, insn.ops[i] );
@@ -238,32 +200,24 @@ bool hex_is_call_insn( const insn_t &insn )
            insn.itype == Hex_callr;
 }
 
-static bool is_return( uint32_t itype, uint32_t /*flags*/, const op_t *ops, bool strict )
+bool hex_is_ret_insn( const insn_t &insn, bool strict )
 {
     // returns true if instruction is a return from sub-routine
     // TODO: should we check if it's conditional?
     if( !strict &&
-        (itype == Hex_deallocframe_raw ||
-         itype == Hex_deallocframe) )
+        (insn.itype == Hex_deallocframe_raw ||
+         insn.itype == Hex_deallocframe) )
         return true;
-    if( itype == Hex_return_raw ||
-        itype == Hex_return ||
-        itype == Hex_jumpr && ops[0].is_reg( REG_LR ) )
+    if( insn.itype == Hex_return_raw ||
+        insn.itype == Hex_return ||
+        insn.itype == Hex_jumpr && insn.ops[0].is_reg( REG_LR ) )
         return true;
     return false;
 }
 
-bool hex_is_ret_insn( const insn_t &insn, bool strict )
-{
-    return visit_sub_insn( insn, is_return, strict );
-}
-
 static __inline bool is_allocframe( const insn_t &insn )
 {
-    return (insn.flags & INSN_DUPLEX)?
-        sub_insn_code( insn, 0 ) == Hex_allocframe ||
-        sub_insn_code( insn, 1 ) == Hex_allocframe :
-        insn.itype == Hex_allocframe;
+    return insn.itype == Hex_allocframe;
 }
 
 ssize_t hex_may_be_func( const insn_t &insn, int /*state*/ )
@@ -336,21 +290,23 @@ bool hex_is_jump_func( func_t &pfn, ea_t *jump_target, ea_t *func_pointer )
     return false;
 }
 
-static bool create_frame( uint32_t itype, uint32_t /*flags*/, const op_t *ops, func_t *pfn )
+static bool create_frame( const insn_t &insn, func_t *pfn )
 {
     // allocframe(#I)
-    if( itype == Hex_allocframe )
+    if( insn.itype == Hex_allocframe )
     {
         pfn->flags |= FUNC_FRAME; // uses frame pointer
         update_func( pfn );
-        add_frame( pfn, ops[0].value/*local size*/, 8/*saved size*/, 0/*argsize*/ );
+        add_frame( pfn, insn.ops[0].value/*local size*/, 8/*saved size*/, 0/*argsize*/ );
         return true;
     }
     // sp = add(sp, #I)
-    if( itype == Hex_add && ops[0].is_reg( REG_SP ) &&
-        ops[1].is_reg( REG_SP ) && ops[2].type == o_imm )
+    if( insn.itype == Hex_add &&
+        insn.ops[0].is_reg( REG_SP ) &&
+        insn.ops[1].is_reg( REG_SP ) &&
+        insn.ops[2].type == o_imm )
     {
-        add_frame( pfn, -ops[2].value/*local size*/, 0/*saved size*/, 0/*argsize*/ );
+        add_frame( pfn, - insn.ops[2].value/*local size*/, 0/*saved size*/, 0/*argsize*/ );
         return true;
     }
     return false;
@@ -364,7 +320,7 @@ void hex_create_func_frame( func_t *pfn )
     for( int i = 0; i < 10 && ea < end; i++ )
     {
         if( !decode_insn( &insn, ea ) ||
-            visit_sub_insn( insn, create_frame, pfn ) )
+            create_frame( insn, pfn ) )
             return;
 
         ea += insn.size;
@@ -479,18 +435,6 @@ static bool insn_modifies_op0( uint32_t itype )
     return (mod[ itype >> 5 ] >> (itype & 31)) & 1;
 }
 
-static bool _spoils( uint32_t itype, uint32_t flags, const op_t *ops, uint32_t reg1, uint32_t reg2 )
-{
-    if( !insn_modifies_op0( itype ) )
-        return false;
-
-    const op_t &op = ops[ get_op_index( flags ) + 0 ];
-    return op.type == o_reg && (
-           (reg_op_flags( op ) & REG_DOUBLE) && op.reg == reg1 && reg2 == reg1 + 1 ||
-           op.reg == reg1 ||
-           op.reg == reg2 );
-}
-
 // hack to skip our target function call
 static ea_t s_call_ea = BADADDR;
 
@@ -500,10 +444,17 @@ static int spoils( const insn_t &insn, uint32_t reg1, uint32_t reg2 = ~0u )
     // returns: 0 - doesn't; 1 - does; 2 - modifies all registers (i.e. function call)
     if( insn.ea != s_call_ea &&
         (insn.itype == Hex_call || insn.itype == Hex_callr) &&
-       (insn_flags( insn ) & PRED_MASK) == 0 )
+        insn_predicate( insn ) == 0 )
        return 2;
 
-    return visit_sub_insn( insn, _spoils, reg1, reg2 )? 1 : 0;
+    if( !insn_modifies_op0( insn.itype ) )
+        return 0;
+
+    const op_t &op = insn_ops( insn )[0];
+    return op.type == o_reg && (
+           (reg_op_flags( op ) & REG_DOUBLE) && op.reg == reg1 && reg2 == reg1 + 1 ||
+           op.reg == reg1 ||
+           op.reg == reg2 )? 1 : 0;
 }
 
 static bool idaapi set_op_type( const insn_t &/*insn*/, const op_t &/*op*/, const tinfo_t &/*type*/, const char* /*name*/ )
@@ -513,11 +464,14 @@ static bool idaapi set_op_type( const insn_t &/*insn*/, const op_t &/*op*/, cons
     return false; // VERY simplified version :)
 }
 
-static bool _is_stkarg_write( uint32_t itype, uint32_t flags, const op_t *ops, int *src, int *dst )
+static bool idaapi is_stkarg_write( const insn_t &insn, int *src, int *dst )
 {
+    // NB: function name is misleading
+    // returns true if instruction writes to stack
+
     // memXX(sp+#Ii) = ... or memXX(fp+#Ii) = ...
-    ops += get_op_index( flags );
-    if( itype != Hex_mov || ops[0].type != o_displ ||
+    const op_t *ops = insn_ops( insn );
+    if( insn.itype != Hex_mov || ops[0].type != o_displ ||
         ops[0].reg != REG_SP && ops[0].reg != REG_FP )
         return false;
 
@@ -527,22 +481,16 @@ static bool _is_stkarg_write( uint32_t itype, uint32_t flags, const op_t *ops, i
 }
 
 #if IDA_SDK_VERSION < 750
-static bool idaapi is_stkarg_load( const insn_t &insn, int *src, int *dst )
-{
-    // NB: function name is misleading
-    // returns true if instruction writes to stack
-    return visit_sub_insn( insn, _is_stkarg_write, src, dst );
-}
 
 void hex_use_arg_types( ea_t ea, func_type_data_t &fti, funcargvec_t &rargs )
 {
     s_call_ea = ea;
     // set ea to the end of the packet
-    ea = find_packet_end( ea ) + 4;
+    ea = find_packet_end( ea );
     gen_use_arg_tinfos(
         ea, &fti, &rargs,
         &set_op_type,
-        &is_stkarg_load,
+        &is_stkarg_write,
         NULL
     );
 }
@@ -567,7 +515,7 @@ struct hex_argtinfo_helper_t : argtinfo_helper_t
     {
         // NB: function name is misleading
         // returns true if instruction writes to stack
-        return visit_sub_insn( insn, _is_stkarg_write, src, dst );
+        return is_stkarg_write( insn, src, dst );
     }
 };
 
@@ -575,7 +523,7 @@ void hex_use_arg_types( ea_t ea, func_type_data_t &fti, funcargvec_t &rargs )
 {
     s_call_ea = ea;
     // set ea to the end of the packet
-    ea = find_packet_end( ea ) + 4;
+    ea = find_packet_end( ea );
     hex_argtinfo_helper_t hlp;
     hlp.use_arg_tinfos( ea, &fti, &rargs );
 }
@@ -663,7 +611,7 @@ bool hex_jump_pattern_t::jpi4( void )
 {
     // (a) if (cmp.gtu(rI.new, #N)) jump:t default
     if( insn.itype == Hex_jump &&
-        (insn_flags( insn ) & PRED_MASK) == PRED_GTU &&
+        insn_predicate( insn ) == PRED_GTU &&
         insn.ops[0].is_reg( r[rI] ) &&
         insn.ops[1].type == o_imm )
     {
@@ -695,7 +643,7 @@ bool hex_jump_pattern_t::jpi4( void )
         while( ea < end && decode_insn( &temp, ea ) )
         {
             if( temp.itype == Hex_jump &&
-                (insn_flags( temp ) & PRED_MASK) == PRED_REG &&
+                insn_predicate( temp ) == PRED_REG &&
                 temp.ops[0].is_reg( r[rP] ) &&
                 ((reg_op_flags( temp.ops[0] ) & REG_POST_NEW) != 0) ^ (temp.ea >= packet_end( insn )) )
             {
@@ -712,7 +660,7 @@ bool hex_jump_pattern_t::jpi4( void )
 bool hex_jump_pattern_t::jpi3( void )
 {
     // rT = add(pc, ##table@pcrel)
-    if( (insn_flags( insn ) & PRED_MASK) == 0 &&
+    if( insn_predicate( insn ) == 0 &&
         insn.itype == Hex_add &&
         insn.ops[0].is_reg( r[rT] ) &&
         insn.ops[1].is_reg( REG_PC ) &&
@@ -729,7 +677,7 @@ bool hex_jump_pattern_t::jpi3( void )
 bool hex_jump_pattern_t::jpi2( void )
 {
     // rB = memw(rT + rI<<#2)
-    if( (insn_flags( insn ) & PRED_MASK) == 0 &&
+    if( insn_predicate( insn ) == 0 &&
         insn.itype == Hex_mov &&
         insn.ops[0].is_reg( r[rB] ) &&
         insn.ops[1].type == o_mem_ind_off &&
@@ -747,7 +695,7 @@ bool hex_jump_pattern_t::jpi2( void )
 bool hex_jump_pattern_t::jpi1( void )
 {
     // rA = add(rB, rT)
-    if( (insn_flags( insn ) & PRED_MASK) == 0 &&
+    if( insn_predicate( insn ) == 0 &&
         insn.itype == Hex_add &&
         insn.ops[0].is_reg( r[rA] ) &&
         insn.ops[1].type == o_reg &&
@@ -771,11 +719,11 @@ bool hex_jump_pattern_t::jpi0( void )
 bool hex_jump_pattern_t::handle_mov( void )
 {
     // track register movement
-    if( insn.itype != Hex_mov /*|| (insn_flags( insn ) & PRED_MASK)*/ )
+    if( insn.itype != Hex_mov /*|| insn_predicate( insn )*/ )
         return false;
 
     // stack load?
-    const op_t *ops = insn.ops + get_op_index( insn_flags( insn ) );
+    const op_t *ops = insn_ops( insn );
     if( ops[1].type == o_displ && ops[1].reg == REG_SP )
         return mov_set( ops[0].reg, ops[1] );
     // stack store?
@@ -877,7 +825,7 @@ bool hex_jump_pattern_t::jpi4( void )
 {
     // (a) if (cmp.gtu(rI.new, #N)) jump:t default
     if( insn.itype == Hex_jump &&
-        (insn_flags( insn ) & PRED_MASK) == PRED_GTU &&
+        insn_predicate( insn ) == PRED_GTU &&
         is_equal( insn.ops[0], rI ) &&
         insn.ops[1].type == o_imm )
     {
@@ -909,7 +857,7 @@ bool hex_jump_pattern_t::jpi4( void )
         while( ea < end && decode_insn( &temp, ea ) )
         {
             if( temp.itype == Hex_jump &&
-                (insn_flags( temp ) & PRED_MASK) == PRED_REG &&
+                insn_predicate( temp ) == PRED_REG &&
                 temp.ops[0].is_reg( rP ) &&
                 ((reg_op_flags( temp.ops[0] ) & REG_POST_NEW) != 0) ^ (temp.ea >= packet_end( insn )) )
             {
@@ -926,7 +874,7 @@ bool hex_jump_pattern_t::jpi4( void )
 bool hex_jump_pattern_t::jpi3( void )
 {
     // rT = add(pc, ##table@pcrel)
-    if( (insn_flags( insn ) & PRED_MASK) == 0 &&
+    if( insn_predicate( insn ) == 0 &&
         insn.itype == Hex_add &&
         is_equal( insn.ops[0], rT ) &&
         insn.ops[1].is_reg( REG_PC ) &&
@@ -943,7 +891,7 @@ bool hex_jump_pattern_t::jpi3( void )
 bool hex_jump_pattern_t::jpi2( void )
 {
     // rB = memw(rT + rI<<#2)
-    if( (insn_flags( insn ) & PRED_MASK) == 0 &&
+    if( insn_predicate( insn ) == 0 &&
         insn.itype == Hex_mov &&
         is_equal( insn.ops[0], rB ) &&
         insn.ops[1].type == o_mem_ind_off &&
@@ -962,7 +910,7 @@ bool hex_jump_pattern_t::jpi1( void )
 {
     // rA = add(rB, rT)
     if( insn.itype == Hex_add &&
-        (insn_flags( insn ) & PRED_MASK) == 0 &&
+        insn_predicate( insn ) == 0 &&
         is_equal( insn.ops[0], rA ) &&
         insn.ops[1].type == o_reg &&
         insn.ops[2].type == o_reg )
@@ -978,7 +926,7 @@ bool hex_jump_pattern_t::jpi0( void )
 {
     // jumpr rA
     if( insn.itype == Hex_jumpr &&
-        (insn_flags( insn ) & PRED_MASK) == 0 &&
+        insn_predicate( insn ) == 0 &&
         !insn.ops[0].is_reg( REG_LR ) )
     {
         track( insn.ops[0].reg, rA, dt_dword );
@@ -991,11 +939,11 @@ bool hex_jump_pattern_t::handle_mov( tracked_regs_t &_regs )
 {
     // track register movement
     if( insn.itype != Hex_mov ||
-        (insn_flags( insn ) & IAT_MASK) /*|| (insn_flags( insn ) & PRED_MASK)*/ )
+        (insn_flags( insn ) & IAT_MASK) /*|| insn_predicate( insn )*/ )
         return false;
 
     // stack load or store?
-    const op_t *ops = insn.ops + get_op_index( insn_flags( insn ) );
+    const op_t *ops = insn_ops( insn );
     return set_moved( ops[0], ops[1], _regs );
 }
 

@@ -8,12 +8,12 @@
 
 /*
   Instructions are stored as usual, except for these special cases:
-  a) duplex instructions
-  .itype[7:0] = 1st sub-instruction, .itype[15:8] = 2nd sub-instruction, .flags |= INSN_DUPLEX
-  The 1st sub-instruction flags are stored in .auxpref_u16[0] and .segpref.
-  The 2nd sub-instruction flags are stored in .auxpref_u16[1] and .insnpref.
+  a) for duplex instructions the code data does not correspond to the instruction.
+  The 1st sub-instruction is at a higher address word.
+  The 2nd sub-instruction is at a lower address word.
+  They both share common bits [31:29] and [15:13].
   b) if the instruction is predicated, i.e. it has `if (condition)`,
-     then first one or two operands are used for the predicate.
+  then first one or two operands are used for the predicate.
 */
 enum {
     // operand types
@@ -176,7 +176,7 @@ static __inline uint32_t imm_op_flags( const op_t &op )
 
 enum {
     // instruction flags, stored as usual in .flags
-    // note: first 3 bits are taken
+    // note: first 3 bits are taken by IDA
     INSN_EXTENDED   = (1 << 3),         // has extender word
     INSN_DUPLEX     = (1 << 4),         // this is duplex
     INSN_PKT_BEG    = (1 << 5),         // start of packet
@@ -184,12 +184,8 @@ enum {
     INSN_ENDLOOP0   = (1 << 7),         // inner loop end
     INSN_ENDLOOP1   = (1 << 8),         // outer loop end
     INSN_ENDLOOP01  = INSN_ENDLOOP0 | INSN_ENDLOOP1,
-#define INSN_BEG_OFF(o) (((o) & 3) << 9)  // offset from packet start in words (0..3)
-#define INSN_END_OFF(o) (((o) & 3) << 11) // offset to packet end in words (0..3)
-    INSN_BEG_SHIFT  = 9,
-    INSN_END_SHIFT  = 11,
 
-    // all other flags are stored in .auxpref_u16[*] and .segpref/.insnpref
+    // all other flags are stored in .auxpref
     // instruction predicates
     PRED_NONE       = (0  << 0),        // no predicate
     PRED_REG        = (1  << 0),        // pred[.new]
@@ -283,41 +279,35 @@ enum {
     SG_SHIFT        = 12,
 };
 
-static __inline uint32_t insn_flags( const insn_t &insn, uint32_t subinsn = 0 )
+static __inline uint32_t insn_flags( const insn_t &insn )
 {
-    if( subinsn == 0) // also valid for single instructions
-        return (insn.segpref << 16) | insn.auxpref_u16[0];
-    else
-        return (insn.insnpref << 16) | insn.auxpref_u16[1];
+    return insn.auxpref;
 }
 
-static __inline uint32_t sub_insn_code( const insn_t &insn, uint32_t subinsn )
+static __inline uint32_t insn_predicate( const insn_t &insn )
 {
-    if( subinsn == 0)
-        return insn.itype & 0xFF;
-    else
-        return insn.itype >> 8;
+    return insn_flags( insn ) & PRED_MASK;
 }
 
-static __inline uint32_t get_op_index( uint32_t flags )
+static __inline op_t* insn_ops( const insn_t &insn )
 {
-    // returns number of operands used by predicate (i.e. index of 1st actual operand)
-    uint32_t pred = flags & PRED_MASK;
-    return pred == PRED_NONE? 0 :
-           pred == PRED_REG?  1 : 2;
+    uint32_t pred = insn_predicate( insn );
+    // returns address of the 1st actual operand
+    return (op_t*) insn.ops + (pred == PRED_NONE? 0 :
+                               pred == PRED_REG?  1 : 2);
 }
 
 static __inline ea_t packet_start( const insn_t &insn )
 {
     // returns start address of instruction's packet
-    return insn.ea - ((insn.flags >> INSN_BEG_SHIFT) & 3) * 4;
+    return insn.ea - insn.segpref;
 }
 
 static __inline ea_t packet_end( const insn_t &insn )
 {
     // returns end address of instruction's packet, i.e.
-    // address of the next packet
-    return insn.ea + (((insn.flags >> INSN_END_SHIFT) & 3) + 1) * 4;
+    // address of the next packet start
+    return insn.ea + insn.insnpref;
 }
 
 /*

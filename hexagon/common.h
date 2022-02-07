@@ -26,7 +26,6 @@ enum {
     HEX_CR_FOR_DUPLEX       = (1 << 3),
 };
 
-uint32_t get_num_ops( uint32_t itype, uint32_t flags );
 const char *get_insn_template( uint32_t itype );
 ea_t find_packet_end( ea_t ea );
 ssize_t loader_elf_machine( linput_t *li, int machine_type, const char **p_procname, proc_def_t **p_pd );

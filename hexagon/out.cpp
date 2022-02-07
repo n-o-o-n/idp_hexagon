@@ -414,14 +414,16 @@ static uint32_t hex_out_predicate( outctx_t &ctx, uint32_t ptype, uint32_t op_id
     return op_idx + (ptype == PRED_REG? 1 : 2);
 }
 
-static uint32_t hex_out_insn( outctx_t &ctx, uint32_t itype, uint32_t flags, uint32_t op_idx )
+static void hex_out_insn( outctx_t &ctx )
 {
+    uint32_t flags = insn_flags( ctx.insn );
+    uint32_t op_idx = 0;
     // output predicate
     if( (flags & PRED_MASK) != PRED_NONE )
         op_idx = hex_out_predicate( ctx, flags & PRED_MASK, op_idx );
 
     // output instruction body
-    const char *tmpl = get_insn_template( itype );
+    const char *tmpl = get_insn_template( ctx.insn.itype );
     uint32_t maxop = 0, color = 0;
     while( char c = *tmpl++ )
     {
@@ -480,8 +482,6 @@ static uint32_t hex_out_insn( outctx_t &ctx, uint32_t itype, uint32_t flags, uin
         };
         ctx.out_keyword( post[(flags & IPO_MASK) >> IPO_SHIFT] );
     }
-    // returns next operand index
-    return op_idx + maxop - '0' + 1;
 }
 
 static bool is_single( const insn_t insn )
@@ -537,24 +537,10 @@ void out_insn( outctx_t &ctx )
         out_pkt_beg( ctx );
     else
         ctx.out_line( "  ", COLOR_SYMBOL );
-    if( (ctx.insn.flags & INSN_DUPLEX) )
-    {
-        uint32_t flags = insn_flags( ctx.insn, 1 );
-        uint32_t op_idx = hex_out_insn( ctx, sub_insn_code( ctx.insn, 1 ), flags, 0 );
-        if( (idpflags & HEX_CR_FOR_DUPLEX) )
-        {
-            ctx.flush_outbuf();
-            ctx.out_line( "  ", COLOR_SYMBOL );
-        } else
-            ctx.out_line( "; ", COLOR_SYMBOL );
-        flags = insn_flags( ctx.insn, 0 );
-        hex_out_insn( ctx, sub_insn_code( ctx.insn, 0 ), flags, op_idx );
-    }
-    else
-    {
-        uint32_t flags = insn_flags( ctx.insn );
-        hex_out_insn( ctx, ctx.insn.itype, flags, 0 );
-    }
+
+    hex_out_insn( ctx );
+    // TODO: output 2nd part of duplex here
+
     if( (ctx.insn.flags & INSN_PKT_END) )
         out_pkt_end( ctx );
     ctx.flush_outbuf();

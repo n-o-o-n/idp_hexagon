@@ -8,12 +8,15 @@
 
 /*
   Instructions are stored as usual, except for these special cases:
-  a) for duplex instructions the code data does not correspond to the instruction.
-  The 1st sub-instruction is at a higher address word.
-  The 2nd sub-instruction is at a lower address word.
+  a) for duplex instructions the opcode dword is artificially split onto two
+  sub-instruction words. As a result, opcodes don't correspond to the instructions.
+  The 1st sub-instruction is at a higher address word - bits [28:16].
+  The 2nd sub-instruction is at a lower address word - bits [12:0].
   They both share common bits [31:29] and [15:13].
   b) if the instruction is predicated, i.e. it has `if (condition)`,
-  then first one or two operands are used for the predicate.
+  the condition operands are stored in ops[6] and ops[7].
+  Both exceptions are a workaround for the IDA limitation that it stores flags
+  only for the first two operands.
 */
 enum {
     // operand types
@@ -279,6 +282,11 @@ enum {
     SG_SHIFT        = 12,
 };
 
+enum {
+    PRED_A          = UA_MAXOP - 2,     // index of the 1st predicate operand (6)
+    PRED_B          = UA_MAXOP - 1,     // index of the 2nw predicate operand (7)
+};
+
 static __inline uint32_t insn_flags( const insn_t &insn )
 {
     return insn.auxpref;
@@ -287,14 +295,6 @@ static __inline uint32_t insn_flags( const insn_t &insn )
 static __inline uint32_t insn_predicate( const insn_t &insn )
 {
     return insn_flags( insn ) & PRED_MASK;
-}
-
-static __inline op_t* insn_ops( const insn_t &insn )
-{
-    uint32_t pred = insn_predicate( insn );
-    // returns address of the 1st actual operand
-    return (op_t*) insn.ops + (pred == PRED_NONE? 0 :
-                               pred == PRED_REG?  1 : 2);
 }
 
 static __inline ea_t packet_start( const insn_t &insn )

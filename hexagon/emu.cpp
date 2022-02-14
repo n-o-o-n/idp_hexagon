@@ -69,7 +69,6 @@ static void handle_insn( const insn_t &insn )
         break;
 
     case Hex_add:
-        ops = insn_ops( insn );
         F = get_flags( insn.ea );
         if( !ops[0].is_reg( REG_SP ) && ops[1].is_reg( REG_SP ) &&
             pfn && may_create_stkvars() && !is_defarg( F, ops[2].n ) )
@@ -203,11 +202,13 @@ bool hex_is_call_insn( const insn_t &insn )
 bool hex_is_ret_insn( const insn_t &insn, bool strict )
 {
     // returns true if instruction is a return from sub-routine
-    // TODO: should we check if it's conditional?
     if( !strict &&
         (insn.itype == Hex_deallocframe_raw ||
          insn.itype == Hex_deallocframe) )
         return true;
+    // is it conditional?
+    if( insn_predicate( insn ) )
+        return false;
     if( insn.itype == Hex_return_raw ||
         insn.itype == Hex_return ||
         insn.itype == Hex_jumpr && insn.ops[0].is_reg( REG_LR ) )
@@ -445,12 +446,12 @@ static int spoils( const insn_t &insn, uint32_t reg1, uint32_t reg2 = ~0u )
     if( insn.ea != s_call_ea &&
         (insn.itype == Hex_call || insn.itype == Hex_callr) &&
         insn_predicate( insn ) == 0 )
-       return 2;
+        return 2;
 
     if( !insn_modifies_op0( insn.itype ) )
         return 0;
 
-    const op_t &op = insn_ops( insn )[0];
+    const op_t &op = insn.ops[0];
     return op.type == o_reg && (
            (reg_op_flags( op ) & REG_DOUBLE) && op.reg == reg1 && reg2 == reg1 + 1 ||
            op.reg == reg1 ||
@@ -470,7 +471,7 @@ static bool idaapi is_stkarg_write( const insn_t &insn, int *src, int *dst )
     // returns true if instruction writes to stack
 
     // memXX(sp+#Ii) = ... or memXX(fp+#Ii) = ...
-    const op_t *ops = insn_ops( insn );
+    const op_t *ops = insn.ops;
     if( insn.itype != Hex_mov || ops[0].type != o_displ ||
         ops[0].reg != REG_SP && ops[0].reg != REG_FP )
         return false;
@@ -612,11 +613,11 @@ bool hex_jump_pattern_t::jpi4( void )
     // (a) if (cmp.gtu(rI.new, #N)) jump:t default
     if( insn.itype == Hex_jump &&
         insn_predicate( insn ) == PRED_GTU &&
-        insn.ops[0].is_reg( r[rI] ) &&
-        insn.ops[1].type == o_imm )
+        insn.ops[PRED_A].is_reg( r[rI] ) &&
+        insn.ops[PRED_B].type == o_imm )
     {
-        si->ncases = insn.ops[1].value + 1;
-        si->defjump = insn.ops[2].addr;
+        si->ncases = insn.ops[PRED_B].value + 1;
+        si->defjump = insn.ops[0].addr;
         return true;
     }
     // (b) p0 = cmp.gtu(rI, #N); if (p0.new) jump:nt default
@@ -642,12 +643,13 @@ bool hex_jump_pattern_t::jpi4( void )
         insn_t temp;
         while( ea < end && decode_insn( &temp, ea ) )
         {
+            // if (p0.new) jump:nt default
             if( temp.itype == Hex_jump &&
                 insn_predicate( temp ) == PRED_REG &&
-                temp.ops[0].is_reg( r[rP] ) &&
-                ((reg_op_flags( temp.ops[0] ) & REG_POST_NEW) != 0) ^ (temp.ea >= packet_end( insn )) )
+                temp.ops[PRED_A].is_reg( r[rP] ) &&
+                ((reg_op_flags( temp.ops[PRED_A] ) & REG_POST_NEW) != 0) ^ (temp.ea >= packet_end( insn )) )
             {
-                si->defjump = insn.ops[1].addr;
+                si->defjump = insn.ops[0].addr;
                 break;
             }
             ea += temp.size;
@@ -723,7 +725,7 @@ bool hex_jump_pattern_t::handle_mov( void )
         return false;
 
     // stack load?
-    const op_t *ops = insn_ops( insn );
+    const op_t *ops = insn.ops;
     if( ops[1].type == o_displ && ops[1].reg == REG_SP )
         return mov_set( ops[0].reg, ops[1] );
     // stack store?
@@ -826,11 +828,11 @@ bool hex_jump_pattern_t::jpi4( void )
     // (a) if (cmp.gtu(rI.new, #N)) jump:t default
     if( insn.itype == Hex_jump &&
         insn_predicate( insn ) == PRED_GTU &&
-        is_equal( insn.ops[0], rI ) &&
-        insn.ops[1].type == o_imm )
+        is_equal( insn.ops[PRED_A], rI ) &&
+        insn.ops[PRED_B].type == o_imm )
     {
-        si->ncases = insn.ops[1].value + 1;
-        si->defjump = insn.ops[2].addr;
+        si->ncases = insn.ops[PRED_B].value + 1;
+        si->defjump = insn.ops[0].addr;
         return true;
     }
     // (b) p0 = cmp.gtu(rI, #N); if (p0.new) jump:nt default
@@ -856,12 +858,13 @@ bool hex_jump_pattern_t::jpi4( void )
         insn_t temp;
         while( ea < end && decode_insn( &temp, ea ) )
         {
+            // if (p0.new) jump:nt default
             if( temp.itype == Hex_jump &&
                 insn_predicate( temp ) == PRED_REG &&
-                temp.ops[0].is_reg( rP ) &&
-                ((reg_op_flags( temp.ops[0] ) & REG_POST_NEW) != 0) ^ (temp.ea >= packet_end( insn )) )
+                temp.ops[PRED_A].is_reg( rP ) &&
+                ((reg_op_flags( temp.ops[PRED_A] ) & REG_POST_NEW) != 0) ^ (temp.ea >= packet_end( insn )) )
             {
-                si->defjump = insn.ops[1].addr;
+                si->defjump = insn.ops[0].addr;
                 break;
             }
             ea += temp.size;
@@ -943,8 +946,7 @@ bool hex_jump_pattern_t::handle_mov( tracked_regs_t &_regs )
         return false;
 
     // stack load or store?
-    const op_t *ops = insn_ops( insn );
-    return set_moved( ops[0], ops[1], _regs );
+    return set_moved( insn.ops[0], insn.ops[1], _regs );
 }
 
 bool hex_jump_pattern_t::equal_ops( const op_t &x, const op_t &y ) const

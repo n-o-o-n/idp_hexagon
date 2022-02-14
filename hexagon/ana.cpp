@@ -142,7 +142,7 @@ static uint32_t new_value( uint32_t nt, bool hvx = false )
     }
     // we got the producer, find out the operand
     // TODO: check if duplexes have to be supported
-    const op_t *op = insn_ops( temp );
+    const op_t *op = temp.ops;
     assert( op->type == o_reg );
     if( !hvx )
     {
@@ -169,41 +169,35 @@ __cleanup:
 // helper functions for different kinds of operands
 //
 
-static void add_reg( op_t **ops, uint32_t reg, uint32_t flags = 0 )
+static void op_reg( op_t &op, uint32_t reg, uint32_t flags = 0 )
 {
     // a register operand
-    op_t *op = *ops;
-    op->type = o_reg;
-    op->reg = reg;
-    op->specval = flags; // REG_XXX, REG_PRE_XXX, REG_POST_XXX
-    op->dtype = dt_dword;
-    (*ops)++;
+    op.type = o_reg;
+    op.reg = reg;
+    op.specval = flags; // REG_XXX, REG_PRE_XXX, REG_POST_XXX
+    op.dtype = dt_dword;
 }
 
-static void add_reg_off( op_t **ops, uint32_t reg, uint32_t imm )
+static void op_reg_off( op_t &op, uint32_t reg, uint32_t imm )
 {
     // Rs + #u14 (used only in dcfetch instruction)
-    op_t *op = *ops;
-    op->type = o_reg_off;
-    op->reg = reg;
-    op->value = imm;
-    op->dtype = dt_dword;
-    (*ops)++;
+    op.type = o_reg_off;
+    op.reg = reg;
+    op.value = imm;
+    op.dtype = dt_dword;
 }
 
-static void add_imm_ex( op_t **ops, uint32_t imm, uint32_t flags )
+static void op_imm_ex( op_t &op, uint32_t imm, uint32_t flags )
 {
-    op_t *op = *ops;
-    op->type = o_imm;
-    op->value = imm;
-    op->dtype = dt_dword;
-    op->specflag1 = flags; // IMM_XXX
-    (*ops)++;
+    op.type = o_imm;
+    op.value = imm;
+    op.dtype = dt_dword;
+    op.specflag1 = flags; // IMM_XXX
 }
 
-static __inline void add_imm( op_t **ops, uint32_t imm, bool _signed = false, bool extended = false )
+static __inline void op_imm( op_t &op, uint32_t imm, bool _signed = false, bool extended = false )
 {
-    add_imm_ex( ops, imm, (_signed? IMM_SIGNED : 0) | (extended? IMM_EXTENDED : 0) );
+    op_imm_ex( op, imm, (_signed? IMM_SIGNED : 0) | (extended? IMM_EXTENDED : 0) );
 }
 
 static __inline uint32_t mem_shift( uint32_t type )
@@ -224,112 +218,94 @@ static __inline uint32_t mem_dtype( uint32_t type )
            dt_byte;
 }
 
-static void add_mem_ind( op_t **ops, uint32_t type, uint32_t reg, uint32_t imm, bool extended = false )
+static void op_mem_ind( op_t &op, uint32_t type, uint32_t reg, uint32_t imm, bool extended = false )
 {
     // memXX(Rs + #s11) or memXX(gp + #u16)
-    op_t *op = *ops;
-    op->type = o_displ;
-    op->specval = type | (extended? MEM_IMM_EXT : 0);
-    op->dtype = mem_dtype( type );
-    op->reg = reg;
-    op->addr = imm;
-    (*ops)++;
+    op.type = o_displ;
+    op.specval = type | (extended? MEM_IMM_EXT : 0);
+    op.dtype = mem_dtype( type );
+    op.reg = reg;
+    op.addr = imm;
 }
 
-static void add_mem_abs( op_t **ops, uint32_t type, uint32_t abs )
+static void op_mem_abs( op_t &op, uint32_t type, uint32_t abs )
 {
     // memXX(##u32)
-    op_t *op = *ops;
-    op->type = o_mem;
-    op->specval = type;
-    op->dtype = mem_dtype( type );
-    op->value = abs;
-    (*ops)++;
+    op.type = o_mem;
+    op.specval = type;
+    op.dtype = mem_dtype( type );
+    op.value = abs;
 }
 
-static void add_mem_abs_set( op_t **ops, uint32_t type, uint32_t re, uint32_t abs )
+static void op_mem_abs_set( op_t &op, uint32_t type, uint32_t re, uint32_t abs )
 {
     // memXX(Re=##u32)
-    op_t *op = *ops;
-    op->type = o_mem_abs_set;
-    op->specval = type;
-    op->dtype = mem_dtype( type );
-    op->reg = re;
-    op->value = abs;
-    (*ops)++;
+    op.type = o_mem_abs_set;
+    op.specval = type;
+    op.dtype = mem_dtype( type );
+    op.reg = re;
+    op.value = abs;
 }
 
-static void add_mem_abs_off( op_t **ops, uint32_t type, uint32_t ru, uint32_t u2, uint32_t abs )
+static void op_mem_abs_off( op_t &op, uint32_t type, uint32_t ru, uint32_t u2, uint32_t abs )
 {
     // memXX(Ru << #u2 + ##u32)
-    op_t *op = *ops;
-    op->type = o_mem_abs_off;
-    op->specval = type;
-    op->dtype = mem_dtype( type );
-    op->reg = ru;
-    op->specflag2 = u2;
-    op->value = abs;
-    (*ops)++;
+    op.type = o_mem_abs_off;
+    op.specval = type;
+    op.dtype = mem_dtype( type );
+    op.reg = ru;
+    op.specflag2 = u2;
+    op.value = abs;
 }
 
-static void add_mem_locked( op_t **ops, uint32_t type, uint32_t rs, uint32_t pd = 0 )
+static void op_mem_locked( op_t &op, uint32_t type, uint32_t rs, uint32_t pd = 0 )
 {
     // memXX_locked(Rs[,Pd])
-    op_t *op = *ops;
-    op->type = o_mem_locked;
-    op->specval = type | MEM_LOCKED;
-    op->dtype = mem_dtype( type );
-    op->reg = rs;
-    op->specflag2 = pd;
-    (*ops)++;
+    op.type = o_mem_locked;
+    op.specval = type | MEM_LOCKED;
+    op.dtype = mem_dtype( type );
+    op.reg = rs;
+    op.specflag2 = pd;
 }
 
-static void add_mem_ind_off( op_t **ops, uint32_t type, uint32_t rs, uint32_t ru, uint32_t imm )
+static void op_mem_ind_off( op_t &op, uint32_t type, uint32_t rs, uint32_t ru, uint32_t imm )
 {
     // memXX(Rs + Ru << #u2)
     assert( rs < 256 && ru < 256 && imm < 4 );
-    op_t *op = *ops;
-    op->type = o_mem_ind_off;
-    op->specval = type;
-    op->dtype = mem_dtype( type );
-    op->reg = (rs << 8) | ru;
-    op->value = imm;
-    (*ops)++;
+    op.type = o_mem_ind_off;
+    op.specval = type;
+    op.dtype = mem_dtype( type );
+    op.reg = (rs << 8) | ru;
+    op.value = imm;
 }
 
-static void add_mem_inc( op_t **ops, uint32_t otype, uint32_t type, uint32_t rx, int32_t inc, uint32_t mu = 0 )
+static void op_mem_inc( op_t &op, uint32_t otype, uint32_t type, uint32_t rx, int32_t inc, uint32_t mu = 0 )
 {
     // memXX(Rx++...)
-    op_t *op = *ops;
-    op->type = otype; // o_mem_inc_xxx or o_mem_circ_xxx
-    op->specval = type;
-    op->dtype = mem_dtype( type );
-    op->reg = rx;
-    op->value = inc;
-    op->specflag2 = mu;
-    (*ops)++;
+    op.type = otype; // o_mem_inc_xxx or o_mem_circ_xxx
+    op.specval = type;
+    op.dtype = mem_dtype( type );
+    op.reg = rx;
+    op.value = inc;
+    op.specflag2 = mu;
 }
 
-static void add_mxmem( op_t **ops, uint32_t type, uint32_t rs, uint32_t rt = 0xFF )
+static void op_mxmem( op_t &op, uint32_t type, uint32_t rs, uint32_t rt = 0xFF )
 {
     // mxmem[2](Rs[,Rt])
-    op_t *op = *ops;
-    op->type = o_mxmem;
-    op->specval = type;
-    op->dtype = dt_byte; // doesn't matter
-    op->reg = (rs << 8) | rt;
-    (*ops)++;
+    op.type = o_mxmem;
+    op.specval = type;
+    op.dtype = dt_byte; // doesn't matter
+    op.reg = (rs << 8) | rt;
 }
 
-static void add_pcrel( op_t **ops, int32_t offset )
+static void op_pcrel( op_t &op, int32_t offset )
 {
     // a PC-relative offset
     // note: PC points to the start of this instruction packet
-    op_t *op = *ops;
-    op->type = o_near;
-    op->addr = s_pkt_start + offset;
-    op->dtype = dt_code;
-    (*ops)++;
+    op.type = o_near;
+    op.addr = s_pkt_start + offset;
+    op.dtype = dt_code;
 }
 
 static __inline uint8_t gen_sub_reg( uint32_t v )
@@ -343,7 +319,7 @@ static __inline uint8_t gen_sub_reg( uint32_t v )
 // core instructions parsing
 //
 
-static uint32_t iclass_1_CJ( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+static uint32_t iclass_1_CJ( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     if( BIT(0) != 0 ) return 0;
     uint32_t rs = gen_sub_reg( BITS(19:16) ), rt = gen_sub_reg( BITS(11:8) );
@@ -353,11 +329,11 @@ static uint32_t iclass_1_CJ( uint32_t word, uint64_t extender, op_t **ops, uint3
     {
         // pu = cmp%c(Rs16,#II); if ([!]pu.new) jump%t Ii
         uint32_t pu = REG_P( BIT(25) );
-        add_reg( ops, pu );
-        add_reg( ops, rs );
-        add_imm( ops, BITS(12:8) );
-        add_reg( ops, pu, (BIT(22)? REG_PRE_NOT : 0) | REG_POST_NEW );
-        add_pcrel( ops, off );
+        op_reg( ops[0], pu );
+        op_reg( ops[1], rs );
+        op_imm( ops[2], BITS(12:8) );
+        op_reg( ops[3], pu, (BIT(22)? REG_PRE_NOT : 0) | REG_POST_NEW );
+        op_pcrel( ops[4], off );
         flags = (BITS(24:23) << 15) | // CMP_EQ/GT/GTU
                 (BIT(13)? JMP_T : JMP_NT);
         return Hex_cmp_jump;
@@ -366,12 +342,12 @@ static uint32_t iclass_1_CJ( uint32_t word, uint64_t extender, op_t **ops, uint3
     {
         // pu = cmp%c(Rs16,#{0|-1}); if ([!]pu.new) jump%t Ii
         uint32_t pu = REG_P( BIT(25) );
-        add_reg( ops, pu );
-        add_reg( ops, rs );
-        if( BIT(9) ) add_imm( ops, 0 );
-        else         add_imm( ops, -1, true );
-        add_reg( ops, pu, (BIT(22)? REG_PRE_NOT : 0) | REG_POST_NEW );
-        add_pcrel( ops, off );
+        op_reg( ops[0], pu );
+        op_reg( ops[1], rs );
+        if( BIT(9) ) op_imm( ops[2], 0 );
+        else         op_imm( ops[2], -1, true );
+        op_reg( ops[3], pu, (BIT(22)? REG_PRE_NOT : 0) | REG_POST_NEW );
+        op_pcrel( ops[4], off );
         flags = (BIT(8) << 15) | // CMP_EQ | CMP_GT
                 (BIT(13)? JMP_T : JMP_NT);
         return BIT(9)? Hex_tstbit_jump : Hex_cmp_jump;
@@ -380,11 +356,11 @@ static uint32_t iclass_1_CJ( uint32_t word, uint64_t extender, op_t **ops, uint3
     {
         // pu = cmp%c(Rs16,Rt16); if ([!]pu.new) jump%t Ii
         uint32_t pu = REG_P( BIT(12) );
-        add_reg( ops, pu );
-        add_reg( ops, rs );
-        add_reg( ops, rt );
-        add_reg( ops, pu, (BIT(22)? REG_PRE_NOT : 0) | REG_POST_NEW );
-        add_pcrel( ops, off );
+        op_reg( ops[0], pu );
+        op_reg( ops[1], rs );
+        op_reg( ops[2], rt );
+        op_reg( ops[3], pu, (BIT(22)? REG_PRE_NOT : 0) | REG_POST_NEW );
+        op_pcrel( ops[4], off );
         flags = (BITS(24:23) << 15) | // CMP_EQ/GT/GTU
                 (BIT(13)? JMP_T : JMP_NT);
         return Hex_cmp_jump;
@@ -392,23 +368,23 @@ static uint32_t iclass_1_CJ( uint32_t word, uint64_t extender, op_t **ops, uint3
     if( BITS(27:22) == 0b011000 )
     {
         // Rd16 = #II; jump Ii
-        add_reg( ops, rs );
-        add_imm( ops, BITS(13:8) );
-        add_pcrel( ops, off );
+        op_reg( ops[0], rs );
+        op_imm( ops[1], BITS(13:8) );
+        op_pcrel( ops[2], off );
         return Hex_set_jump;
     }
     if( BITS(27:22) == 0b011100 && BITS(13:12) == 0 )
     {
         // Rd16 = Rs16; jump Ii
-        add_reg( ops, rt );
-        add_reg( ops, rs );
-        add_pcrel( ops, off );
+        op_reg( ops[0], rt );
+        op_reg( ops[1], rs );
+        op_pcrel( ops[2], off );
         return Hex_set_jump;
     }
     return 0;
 }
 
-static uint32_t iclass_2_NCJ( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+static uint32_t iclass_2_NCJ( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     // if ([!]cond(Ns8.new...)) jump%t Ii
     if( BIT(19) != 0 || BIT(0) != 0 ) return 0;
@@ -424,27 +400,27 @@ static uint32_t iclass_2_NCJ( uint32_t word, uint64_t extender, op_t **ops, uint
     switch( cond )
     {
     case 0: case 1: case 2:
-        add_reg( ops, new_value( ns ), REG_POST_NEW );
-        add_reg( ops, REG_R(rt) );
+        op_reg( ops[PRED_A], new_value( ns ), REG_POST_NEW );
+        op_reg( ops[PRED_B], REG_R(rt) );
         break;
     case 3: case 4: // swapped arguments
-        add_reg( ops, REG_R(rt) );
-        add_reg( ops, new_value( ns ), REG_POST_NEW );
+        op_reg( ops[PRED_A], REG_R(rt) );
+        op_reg( ops[PRED_B], new_value( ns ), REG_POST_NEW );
         break;
     case 8: case 9: case 10:
-        add_reg( ops, new_value( ns ), REG_POST_NEW );
-        add_imm( ops, rt );
+        op_reg( ops[PRED_A], new_value( ns ), REG_POST_NEW );
+        op_imm( ops[PRED_B], rt );
         break;
     case 11: case 12: case 13:
         if( rt ) return 0;
-        add_reg( ops, new_value( ns ), REG_POST_NEW );
-        if( cond == 11 ) add_imm( ops, 0 );
-        else             add_imm( ops, -1, true );
+        op_reg( ops[PRED_A], new_value( ns ), REG_POST_NEW );
+        if( cond == 11 ) op_imm( ops[PRED_B], 0 );
+        else             op_imm( ops[PRED_B], -1, true );
         break;
     default:
         return 0;
     }
-    add_pcrel( ops, target );
+    op_pcrel( ops[0], target );
     flags = (cond_flg[cond] + (BIT(22)? PRED_NOT : 0)) |
             (BIT(13)? JMP_T : JMP_NT);
     return Hex_jump;
@@ -454,7 +430,7 @@ static const uint8_t types_ld[8] = { MEM_B, MEM_UB, MEM_H, MEM_UH, MEM_W, 255, M
 static const uint8_t types_st[8] = { MEM_B, 255, MEM_H, MEM_H, MEM_W, 255, MEM_D, 255 };
 static const uint8_t types_nv[4] = { MEM_B, MEM_H, MEM_W, 255 };
 
-static uint32_t iclass_3_V4LDST( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+static uint32_t iclass_3_V4LDST( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     uint32_t rs = REG_R( BITS(20:16) ), ru = REG_R( BITS(12:8) );
     uint32_t pv = REG_P( BITS(6:5) ),   rt = REG_R( BITS(4:0) );
@@ -467,10 +443,10 @@ static uint32_t iclass_3_V4LDST( uint32_t word, uint64_t extender, op_t **ops, u
         if( type == 255 ) return 0;
 
         flags = PRED_REG;
-        add_reg( ops, pv, (BIT(24)? REG_PRE_NOT : 0) |
-                          (BIT(25)? REG_POST_NEW : 0) );
-        add_reg( ops, rt, type == MEM_D? REG_DOUBLE : 0 );
-        add_mem_ind_off( ops, type, rs, ru, (BIT(13) << 1) | BIT(7) );
+        op_reg( ops[PRED_A], pv, (BIT(24)? REG_PRE_NOT : 0) |
+                                 (BIT(25)? REG_POST_NEW : 0) );
+        op_reg( ops[0], rt, type == MEM_D? REG_DOUBLE : 0 );
+        op_mem_ind_off( ops[1], type, rs, ru, (BIT(13) << 1) | BIT(7) );
         return Hex_mov;
     }
     else if( BITS(27:26) == 0b01 )
@@ -481,13 +457,13 @@ static uint32_t iclass_3_V4LDST( uint32_t word, uint64_t extender, op_t **ops, u
         if( type == 255 ) return 0;
 
         flags = PRED_REG;
-        add_reg( ops, pv, (BIT(24)? REG_PRE_NOT : 0) |
-                          (BIT(25)? REG_POST_NEW : 0) );
-        add_mem_ind_off( ops, type, rs, ru, (BIT(13) << 1) | BIT(7) );
-        add_reg( ops, code == 5? new_value( BITS(2:0) ) : rt,
-                      code == 5? REG_POST_NEW :
-                      code == 3? REG_POST_HI :
-                      code == 6? REG_DOUBLE : 0 );
+        op_reg( ops[PRED_A], pv, (BIT(24)? REG_PRE_NOT : 0) |
+                                 (BIT(25)? REG_POST_NEW : 0) );
+        op_mem_ind_off( ops[0], type, rs, ru, (BIT(13) << 1) | BIT(7) );
+        op_reg( ops[1], code == 5? new_value( BITS(2:0) ) : rt,
+                        code == 5? REG_POST_NEW :
+                        code == 3? REG_POST_HI :
+                        code == 6? REG_DOUBLE : 0 );
         return Hex_mov;
     }
     else if( BITS(27:25) == 0b100 )
@@ -497,10 +473,10 @@ static uint32_t iclass_3_V4LDST( uint32_t word, uint64_t extender, op_t **ops, u
         if( type == 255 ) return 0;
 
         flags = PRED_REG;
-        add_reg( ops, pv, (BIT(23)? REG_PRE_NOT : 0) |
-                          (BIT(24)? REG_POST_NEW : 0) );
-        add_mem_ind( ops, type, rs, BITS(12:7) << size );
-        add_imm( ops, EXTEND( (SBIT(13) << 5) | BITS(4:0), 0 ), true, extended );
+        op_reg( ops[PRED_A], pv, (BIT(23)? REG_PRE_NOT : 0) |
+                                 (BIT(24)? REG_POST_NEW : 0) );
+        op_mem_ind( ops[0], type, rs, BITS(12:7) << size );
+        op_imm( ops[1], EXTEND( (SBIT(13) << 5) | BITS(4:0), 0 ), true, extended );
         return Hex_mov;
     }
     else if( BITS(27:24) == 0b1010 && BITS(6:5) == 0 )
@@ -509,8 +485,8 @@ static uint32_t iclass_3_V4LDST( uint32_t word, uint64_t extender, op_t **ops, u
         uint32_t type = types_ld[ BITS(23:21) ];
         if( type == 255 ) return 0;
 
-        add_reg( ops, rt, type == MEM_D? REG_DOUBLE : 0 );
-        add_mem_ind_off( ops, type, rs, ru, (BIT(13) << 1) | BIT(7) );
+        op_reg( ops[0], rt, type == MEM_D? REG_DOUBLE : 0 );
+        op_mem_ind_off( ops[1], type, rs, ru, (BIT(13) << 1) | BIT(7) );
         return Hex_mov;
     }
     else if( BITS(27:24) == 0b1011 && BITS(6:5) == 0 )
@@ -520,11 +496,11 @@ static uint32_t iclass_3_V4LDST( uint32_t word, uint64_t extender, op_t **ops, u
         uint32_t type = (code != 5)? types_st[ code ] : types_nv[ BITS(4:3) ];
         if( type == 255 ) return 0;
 
-        add_mem_ind_off( ops, type, rs, ru, (BIT(13) << 1) | BIT(7) );
-        add_reg( ops, code == 5? new_value( BITS(2:0) ) : rt,
-                      code == 5? REG_POST_NEW :
-                      code == 3? REG_POST_HI :
-                      code == 6? REG_DOUBLE : 0 );
+        op_mem_ind_off( ops[0], type, rs, ru, (BIT(13) << 1) | BIT(7) );
+        op_reg( ops[1], code == 5? new_value( BITS(2:0) ) : rt,
+                        code == 5? REG_POST_NEW :
+                        code == 3? REG_POST_HI :
+                        code == 6? REG_DOUBLE : 0 );
         return Hex_mov;
     }
     else if( BITS(27:23) == 0b11000 )
@@ -533,8 +509,8 @@ static uint32_t iclass_3_V4LDST( uint32_t word, uint64_t extender, op_t **ops, u
         uint32_t size = BITS(22:21), type = types_nv[ size ];
         if( type == 255 ) return 0;
 
-        add_mem_ind( ops, type, rs, BITS(12:7) << size );
-        add_imm( ops, EXTEND( (SBIT(13) << 7) | BITS(6:0), 0 ), true, extended );
+        op_mem_ind( ops[0], type, rs, BITS(12:7) << size );
+        op_imm( ops[1], EXTEND( (SBIT(13) << 7) | BITS(6:0), 0 ), true, extended );
         return Hex_mov;
     }
     else if( BITS(27:25) == 0b111 && BIT(23) == 0 && BIT(13) == 0 )
@@ -544,9 +520,9 @@ static uint32_t iclass_3_V4LDST( uint32_t word, uint64_t extender, op_t **ops, u
         uint32_t size = BITS(22:21), type = types_nv[ size ];
         if( type == 255 ) return 0;
 
-        add_mem_ind( ops, type, rs, EXTEND( BITS(12:7), size ), extended );
-        if( BIT(24) ) add_imm( ops, BITS(4:0) );
-        else          add_reg( ops, rt );
+        op_mem_ind( ops[0], type, rs, EXTEND( BITS(12:7), size ), extended );
+        if( BIT(24) ) op_imm( ops[1], BITS(4:0) );
+        else          op_reg( ops[1], rt );
         if( (BIT(24) & BIT(6)) )
             return BIT(5)? Hex_setbit : Hex_clrbit;
         flags = memop[ BITS(6:5) ];
@@ -555,7 +531,7 @@ static uint32_t iclass_3_V4LDST( uint32_t word, uint64_t extender, op_t **ops, u
     return 0;
 }
 
-static uint32_t iclass_4_V2LDST( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+static uint32_t iclass_4_V2LDST( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
     uint32_t code = BITS(23:21), code_nv = BITS(12:11);
@@ -568,14 +544,14 @@ static uint32_t iclass_4_V2LDST( uint32_t word, uint64_t extender, op_t **ops, u
         if( type == 255 ) return 0;
         uint32_t off = EXTEND( (BIT(13) << 5) | BITS(7:3), mem_shift( type ) );
 
-        add_reg( ops, REG_P(BITS(1:0)),
-                 (BIT(25)? REG_POST_NEW : 0) |
-                 (BIT(26)? REG_PRE_NOT : 0) );
-        add_mem_ind( ops, type, REG_R(s5), off, extended );
-        add_reg( ops, code == 5? new_value( BITS(10:8) ) : REG_R(t5),
-                 code == 5? REG_POST_NEW :
-                 code == 3? REG_POST_HI :
-                 code == 6? REG_DOUBLE : 0 );
+        op_reg( ops[PRED_A], REG_P(BITS(1:0)),
+                (BIT(25)? REG_POST_NEW : 0) |
+                (BIT(26)? REG_PRE_NOT : 0) );
+        op_mem_ind( ops[0], type, REG_R(s5), off, extended );
+        op_reg( ops[1], code == 5? new_value( BITS(10:8) ) : REG_R(t5),
+                        code == 5? REG_POST_NEW :
+                        code == 3? REG_POST_HI :
+                        code == 6? REG_DOUBLE : 0 );
         flags = PRED_REG;
         return Hex_mov;
     }
@@ -586,11 +562,11 @@ static uint32_t iclass_4_V2LDST( uint32_t word, uint64_t extender, op_t **ops, u
         if( type == 255 ) return 0;
         uint32_t off = EXTEND( BITS(10:5), mem_shift( type ) );
 
-        add_reg( ops, REG_P(BITS(12:11)),
-                 (BIT(25)? REG_POST_NEW : 0) |
-                 (BIT(26)? REG_PRE_NOT : 0) );
-        add_reg( ops, REG_R(d5), (type == MEM_D? REG_DOUBLE : 0) );
-        add_mem_ind( ops, type, REG_R(s5), off, extended );
+        op_reg( ops[PRED_A], REG_P(BITS(12:11)),
+                (BIT(25)? REG_POST_NEW : 0) |
+                (BIT(26)? REG_PRE_NOT : 0) );
+        op_reg( ops[0], REG_R(d5), (type == MEM_D? REG_DOUBLE : 0) );
+        op_mem_ind( ops[1], type, REG_R(s5), off, extended );
         flags = PRED_REG;
         return Hex_mov;
     }
@@ -602,9 +578,9 @@ static uint32_t iclass_4_V2LDST( uint32_t word, uint64_t extender, op_t **ops, u
         if( type == 255 ) return 0;
         uint32_t off = EXTEND( (BITS(26:25) << 14) | (BITS(20:16) << 9) | (BIT(13) << 8) | BITS(7:0), mem_shift( type ) );
 
-        if( extender ) add_mem_abs( ops, type, off );
-        else           add_mem_ind( ops, type, REG_GP, off );
-        add_reg( ops, code == 5? new_value( BITS(10:8) ) : REG_R(t5),
+        if( extender ) op_mem_abs( ops[0], type, off );
+        else           op_mem_ind( ops[0], type, REG_GP, off );
+        op_reg( ops[1], code == 5? new_value( BITS(10:8) ) : REG_R(t5),
                  code == 5? REG_POST_NEW :
                  code == 3? REG_POST_HI :
                  code == 6? REG_DOUBLE : 0 );
@@ -617,15 +593,15 @@ static uint32_t iclass_4_V2LDST( uint32_t word, uint64_t extender, op_t **ops, u
         if( type == 255 ) return 0;
         uint32_t off = EXTEND( (BITS(26:25) << 14) | (BITS(20:16) << 9) | BITS(13:5), mem_shift( type ) );
 
-        add_reg( ops, REG_R(d5), (type == MEM_D? REG_DOUBLE : 0) );
-        if( extender ) add_mem_abs( ops, type, off );
-        else           add_mem_ind( ops, type, REG_GP, off );
+        op_reg( ops[0], REG_R(d5), (type == MEM_D? REG_DOUBLE : 0) );
+        if( extender ) op_mem_abs( ops[1], type, off );
+        else           op_mem_ind( ops[1], type, REG_GP, off );
         return Hex_mov;
     }
     return 0;
 }
 
-static uint32_t iclass_5_J( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+static uint32_t iclass_5_J( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     uint32_t code1 = BITS(27:25), code2 = BITS(24:21);
     uint32_t rs32 = REG_R( BITS(20:16) ), pu4 = REG_P( BITS(9:8) );
@@ -637,14 +613,14 @@ static uint32_t iclass_5_J( uint32_t word, uint64_t extender, op_t **ops, uint32
         if( code2 == 0b0101 && BITS(13:0) == 0 )
         {
             // callr Rs32
-            add_reg( ops, rs32 );
+            op_reg( ops[0], rs32 );
             return Hex_callr;
         }
         else if( BITS(24:22) == 0b100 && BITS(13:10) == 0 && BITS(7:0) == 0 )
         {
             // if ([!]Pu4) callr Rs32
-            add_reg( ops, pu4, BIT(21)? REG_PRE_NOT : 0 );
-            add_reg( ops, rs32 );
+            op_reg( ops[PRED_A], pu4, BIT(21)? REG_PRE_NOT : 0 );
+            op_reg( ops[0], rs32 );
             flags = PRED_REG;
             return Hex_callr;
         }
@@ -657,15 +633,15 @@ static uint32_t iclass_5_J( uint32_t word, uint64_t extender, op_t **ops, uint32
         if( BITS(24:22) == 0b010 && BITS(13:8) == 0 )
         {
             // {jumpr|hintjr}(Rs32)
-            add_reg( ops, rs32 );
+            op_reg( ops[0], rs32 );
             return BIT(21)? Hex_hintjr : Hex_jumpr;
         }
         else if( BITS(24:22) == 0b101 && BIT(13) == 0 && BIT(10) == 0 )
         {
             // if ([!]Pu4[.new]) jumpr%t Rs32
-            add_reg( ops, pu4, (BIT(21)? REG_PRE_NOT : 0) |
-                               (BIT(11)? REG_POST_NEW : 0) );
-            add_reg( ops, rs32 );
+            op_reg( ops[PRED_A], pu4, (BIT(21)? REG_PRE_NOT : 0) |
+                                      (BIT(11)? REG_POST_NEW : 0) );
+            op_reg( ops[0], rs32 );
             flags = PRED_REG;
             if( BIT(11) ) // only for pu.new
                 flags |= BIT(12)? JMP_T : JMP_NT;
@@ -677,7 +653,7 @@ static uint32_t iclass_5_J( uint32_t word, uint64_t extender, op_t **ops, uint32
         // jump/call Ii
         if( BIT(0) != 0 ) break;
         off = EXTEND( (SBITS(24:16) << 13) | BITS(13:1), 2 );
-        add_pcrel( ops, off );
+        op_pcrel( ops[0], off );
         return code1 == 4? Hex_jump : Hex_call;
 
     case 0b110:
@@ -685,9 +661,9 @@ static uint32_t iclass_5_J( uint32_t word, uint64_t extender, op_t **ops, uint32
         if( BIT(0) != 0 || BIT(10) != 0 ) break;
         if( BIT(24) && BITS(12:11) != 0 ) break;
         off = EXTEND( (SBITS(23:22) << 13) | (BITS(20:16) << 8) | (BIT(13) << 7) | BITS(7:1), 2 );
-        add_reg( ops, pu4, (BIT(21)? REG_PRE_NOT : 0) |
-                           (BIT(11)? REG_POST_NEW : 0) );
-        add_pcrel( ops, off );
+        op_reg( ops[PRED_A], pu4, (BIT(21)? REG_PRE_NOT : 0) |
+                                  (BIT(11)? REG_POST_NEW : 0) );
+        op_pcrel( ops[0], off );
         flags = PRED_REG;
         if( !BIT(24) && BIT(11) ) // only for pu.new
             flags |= BIT(12)? JMP_T : JMP_NT;
@@ -696,7 +672,7 @@ static uint32_t iclass_5_J( uint32_t word, uint64_t extender, op_t **ops, uint32
     return 0;
 }
 
-static uint32_t iclass_6_CR( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+static uint32_t iclass_6_CR( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     uint32_t s2 = BITS(17:16), t2 = BITS(9:8), u2 = BITS(7:6), d2 = BITS(1:0);
     uint32_t s5 = BITS(20:16), d5 = BITS(4:0);
@@ -709,20 +685,20 @@ static uint32_t iclass_6_CR( uint32_t word, uint64_t extender, op_t **ops, uint3
     if( BITS(27:24) == 0b0000 && BIT(13) == 0 && BITS(7:5) == 0 && BITS(2:0) == 0 )
     {
         // p3 = sp{1-3}loop0(Ii,Rs32) or loop{0|1}(Ii,Rs32)
-        uint32_t type = loops[ BITS(23:21) ];
+        uint32_t type = loops[ BITS(23:21) ], rp = 0;
         if( !type ) return 0;
         if( type >= Hex_sp1loop0 )
-            add_reg( ops, REG_P(3) );
-        add_pcrel( ops, EXTEND( (SBITS(12:8) << 2) | BITS(4:3), 2 ) );
-        add_reg( ops, REG_R(s5) );
+            op_reg( ops[rp++], REG_P(3) );
+        op_pcrel( ops[rp], EXTEND( (SBITS(12:8) << 2) | BITS(4:3), 2 ) );
+        op_reg( ops[rp+1], REG_R(s5) );
         return type;
     }
     if( BITS(27:24) == 0b0001 && BIT(0) == 0 )
     {
         // if (Rs32*=#0) jump%t Ii
-        add_reg( ops, REG_R(s5) );
-        add_imm( ops, 0 );
-        add_pcrel( ops, (SBIT(21) << 14) | (BIT(13) << 13) | (BITS(11:1) << 2) );
+        op_reg( ops[PRED_A], REG_R(s5) );
+        op_imm( ops[PRED_B], 0 );
+        op_pcrel( ops[0], (SBIT(21) << 14) | (BIT(13) << 13) | (BITS(11:1) << 2) );
         flags = (PRED_NE0 + BITS(23:22)) | // PRED_NE0|PRED_GE0|PRED_EQ0|PRED_LE0
                 (BIT(12)? JMP_T : JMP_NT);
         return Hex_jump;
@@ -731,35 +707,35 @@ static uint32_t iclass_6_CR( uint32_t word, uint64_t extender, op_t **ops, uint3
     {
         // Cd32/Gd32 = Rs32
         uint32_t dbl = BIT(24)? REG_DOUBLE : 0;
-        add_reg( ops, (BIT(21)? REG_C0 : REG_G0) + d5, dbl );
-        add_reg( ops, REG_R(s5), dbl );
+        op_reg( ops[0], (BIT(21)? REG_C0 : REG_G0) + d5, dbl );
+        op_reg( ops[1], REG_R(s5), dbl );
         return Hex_mov;
     }
     if( BITS(27:26) == 0b10 && BITS(24:22) == 0 && BITS(13:5) == 0 )
     {
         // Rd32 = Cs32/Gs32
         uint32_t dbl = BIT(25)? 0 : REG_DOUBLE;
-        add_reg( ops, REG_R(d5), dbl );
-        add_reg( ops, (BIT(21)? REG_G0 : REG_C0) + s5, dbl );
+        op_reg( ops[0], REG_R(d5), dbl );
+        op_reg( ops[1], (BIT(21)? REG_G0 : REG_C0) + s5, dbl );
         return Hex_mov;
     }
     if( BITS(27:24) == 0b1001 && BIT(13) == 0 && BIT(2) == 0 )
     {
         // p3 = sp{1-3}loop0(Ii,#II) or loop{0|1}(Ii,#II)
-        uint32_t type = loops[ BITS(23:21) ];
+        uint32_t type = loops[ BITS(23:21) ], rp = 0;
         if( !type ) return 0;
         if( type >= Hex_sp1loop0 )
-            add_reg( ops, REG_P(3) );
-        add_pcrel( ops, EXTEND( (SBITS(12:8) << 2) | BITS(4:3), 2 ) );
-        add_imm( ops, (BITS(20:16) << 5) | (BITS(7:5) << 2) | BITS(1:0) );
+            op_reg( ops[rp++], REG_P(3) );
+        op_pcrel( ops[rp], EXTEND( (SBITS(12:8) << 2) | BITS(4:3), 2 ) );
+        op_imm( ops[rp+1], (BITS(20:16) << 5) | (BITS(7:5) << 2) | BITS(1:0) );
         return type;
     }
     if( BITS(27:16) == 0b101001001001 && BIT(13) == 0 && BITS(6:5) == 0 )
     {
         // Rd32 = add(pc,#Ii)
-        add_reg( ops, REG_R(d5) );
-        add_reg( ops, REG_PC );
-        add_imm_ex( ops, s_pkt_start + EXTEND( BITS(12:7), 0 ), IMM_PCREL | (extended? IMM_EXTENDED : 0) );
+        op_reg( ops[0], REG_R(d5) );
+        op_reg( ops[1], REG_PC );
+        op_imm_ex( ops[2], s_pkt_start + EXTEND( BITS(12:7), 0 ), IMM_PCREL | (extended? IMM_EXTENDED : 0) );
         return Hex_add;
     }
     if( BITS(27:24) == 0b1011 && BITS(19:18) == 0 && BITS(13:10) == 0 && BITS(5:2) == 0 )
@@ -777,22 +753,27 @@ static uint32_t iclass_6_CR( uint32_t word, uint64_t extender, op_t **ops, uint3
         // swap the arguments of 'xor'
         if( code == 4 ) SWAP(t2, s2);
 
-        add_reg( ops, REG_P(d2) );
-        if( n == 2 )
-            add_reg( ops, REG_P(t2) );
-        add_reg( ops, REG_P(s2), sn? REG_PRE_NOT : 0 );
-        if( n == 3 ) {
-            add_reg( ops, REG_P(t2) );
-            add_reg( ops, REG_P(u2), un? REG_PRE_NOT : 0 );
+        op_reg( ops[0], REG_P(d2) );
+        if( n == 1 ) {
+            op_reg( ops[1], REG_P(s2), sn? REG_PRE_NOT : 0 );
+        }
+        else if( n == 2 ) {
+            op_reg( ops[1], REG_P(t2) );
+            op_reg( ops[2], REG_P(s2), sn? REG_PRE_NOT : 0 );
+        }
+        else if( n == 3 ) {
+            op_reg( ops[1], REG_P(s2), sn? REG_PRE_NOT : 0 );
+            op_reg( ops[2], REG_P(t2) );
+            op_reg( ops[3], REG_P(u2), un? REG_PRE_NOT : 0 );
         }
         return ins[code][0];
     }
     if( BITS(27:21) == 0b1011000 && BITS(19:18) == 0 && BITS(13:10) == 0b1000 && BITS(7:2) == 0b100100 )
     {
         // Pd4 = [!]fastcorner9(Ps4,Pt4)
-        add_reg( ops, REG_P(d2) );
-        add_reg( ops, REG_P(s2) );
-        add_reg( ops, REG_P(t2) );
+        op_reg( ops[0], REG_P(d2) );
+        op_reg( ops[1], REG_P(s2) );
+        op_reg( ops[2], REG_P(t2) );
         flags = BIT(20)? IAT_NOT : 0;
         return Hex_fastcorner9;
     }
@@ -802,8 +783,8 @@ static uint32_t iclass_6_CR( uint32_t word, uint64_t extender, op_t **ops, uint3
         uint32_t t5 = BITS(12:8), code = BITS(6:5);
         uint32_t dbl = BIT(6)? REG_DOUBLE : 0;
         if( !dbl && t5 ) return 0;
-        add_reg( ops, REG_R(s5), dbl );
-        if( dbl ) add_reg( ops, REG_R(t5), dbl );
+        op_reg( ops[0], REG_R(s5), dbl );
+        if( dbl ) op_reg( ops[1], REG_R(t5), dbl );
         return code == 0? Hex_trace :
                code == 1? Hex_diag :
                code == 2? Hex_diag0 : Hex_diag1;
@@ -811,7 +792,7 @@ static uint32_t iclass_6_CR( uint32_t word, uint64_t extender, op_t **ops, uint3
     return 0;
 }
 
-static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), d5 = BITS(4:0);
     bool extended = extender != 0;
@@ -823,19 +804,19 @@ static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, u
         {
             // Rd32 = {aslh|asrh|sxtb|sxth|zxth}(Rs32)
             static const uint8_t itypes[8] = { Hex_aslh, Hex_asrh, 0, Hex_mov, 0, Hex_sxtb, Hex_zxth, Hex_sxth };
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
             return itypes[ BITS(23:21) ];
         }
         if( BITS(13:12) == 0b10 && BITS(7:5) == 0 )
         {
             // if ([!]Pu4[.new]) Rd32 = {aslh|asrh|sxtb|zxtb|sxth|zxth}(Rs32)
             static const uint8_t itypes[8] = { Hex_aslh, Hex_asrh, 0, 0, Hex_zxtb, Hex_sxtb, Hex_zxth, Hex_sxth };
-            add_reg( ops, REG_P(BITS(9:8)),
-                     (BIT(10)? REG_POST_NEW : 0) |
-                     (BIT(11)? REG_PRE_NOT : 0) );
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[PRED_A], REG_P(BITS(9:8)),
+                    (BIT(10)? REG_POST_NEW : 0) |
+                    (BIT(11)? REG_PRE_NOT : 0) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
             flags = PRED_REG;
             return itypes[ BITS(23:21) ];
         }
@@ -846,8 +827,8 @@ static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, u
         if( BIT(21) == 1 )
         {
             // Rx32.{l|h} = #Ii
-            add_reg( ops, REG_R(s5), BIT(24)? REG_POST_LO : REG_POST_HI );
-            add_imm( ops, (BITS(23:22) << 14) | BITS(13:0) );
+            op_reg( ops[0], REG_R(s5), BIT(24)? REG_POST_LO : REG_POST_HI );
+            op_imm( ops[1], (BITS(23:22) << 14) | BITS(13:0) );
             return Hex_mov;
         }
         break;
@@ -857,14 +838,14 @@ static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, u
         {
             // Rd32 = mux(Pu4,#Ii,Rs32) or mux(Pu4,Rs32,#Ii)
             int32_t imm = EXTEND( SBITS(12:5), 0 );
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_P(BITS(22:21)) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_P(BITS(22:21)) );
             if( BIT(23) ) {
-                add_imm( ops, imm, true, extended );
-                add_reg( ops, REG_R(s5) );
+                op_imm( ops[2], imm, true, extended );
+                op_reg( ops[3], REG_R(s5) );
             } else {
-                add_reg( ops, REG_R(s5) );
-                add_imm( ops, imm, true, extended );
+                op_reg( ops[2], REG_R(s5) );
+                op_imm( ops[3], imm, true, extended );
             }
             return Hex_mux;
         }
@@ -872,13 +853,13 @@ static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, u
         {
             // Rdd32 = combine(Rs32,#Ii) or Rd32 = [!]cmp.eq(Rs32,#Ii)
             int32_t code = BITS(22:21), imm = EXTEND( SBITS(12:5), 0 );
-            add_reg( ops, REG_R(d5), BIT(22)? 0 : REG_DOUBLE );
+            op_reg( ops[0], REG_R(d5), BIT(22)? 0 : REG_DOUBLE );
             if( code == 1 ) {
-                add_imm( ops, imm, true, extended );
-                add_reg( ops, REG_R(s5) );
+                op_imm( ops[1], imm, true, extended );
+                op_reg( ops[2], REG_R(s5) );
             } else {
-                add_reg( ops, REG_R(s5) );
-                add_imm( ops, imm, true, extended );
+                op_reg( ops[1], REG_R(s5) );
+                op_imm( ops[2], imm, true, extended );
             }
             if( code == 3 ) flags = IAT_NOT;
             return BIT(22)? Hex_cmp : Hex_combine;
@@ -887,12 +868,12 @@ static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, u
 
     case 0b0100: {
             // if ([!]Pu4[.new]) Rd32 = add(Rs32,#Ii)
-            add_reg( ops, REG_P(BITS(22:21)),
-                     (BIT(13)? REG_POST_NEW: 0) |
-                     (BIT(23)? REG_PRE_NOT: 0) );
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, EXTEND( SBITS(12:5), 0 ), true, extended );
+            op_reg( ops[PRED_A], REG_P(BITS(22:21)),
+                    (BIT(13)? REG_POST_NEW: 0) |
+                    (BIT(23)? REG_PRE_NOT: 0) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_imm( ops[2], EXTEND( SBITS(12:5), 0 ), true, extended );
             flags = PRED_REG;
             return Hex_add;
         }
@@ -901,18 +882,18 @@ static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, u
         if( BIT(23) == 0 && BITS(3:2) == 0 )
         {
             // Pd4 = [!]cmp%c(Rs32,#Ii)
-            add_reg( ops, REG_P(BITS(1:0)) );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, EXTEND( (SBIT(21) << 9) | BITS(13:5), 0 ), true, extended );
+            op_reg( ops[0], REG_P(BITS(1:0)) );
+            op_reg( ops[1], REG_R(s5) );
+            op_imm( ops[2], EXTEND( (SBIT(21) << 9) | BITS(13:5), 0 ), true, extended );
             flags = (BIT(22)? CMP_GT : CMP_EQ) | (BIT(4)? IAT_NOT : 0);
             return Hex_cmp;
         }
         if( BITS(23:21) == 0b100 && BITS(3:2) == 0 )
         {
             // Pd4 = [!]cmp%c(Rs32,#Ii)
-            add_reg( ops, REG_P(BITS(1:0)) );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, EXTEND( BITS(13:5), 0 ), false, extended );
+            op_reg( ops[0], REG_P(BITS(1:0)) );
+            op_reg( ops[1], REG_R(s5) );
+            op_imm( ops[2], EXTEND( BITS(13:5), 0 ), false, extended );
             flags = CMP_GTU | (BIT(4)? IAT_NOT : 0);
             return Hex_cmp;
         }
@@ -922,9 +903,9 @@ static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, u
             // Rd32 = {and|or}(Rs32,#Ii) or Rd32 = sub(#Ii,Rs32)
             static const uint8_t itypes[4] = { Hex_and, Hex_sub, Hex_or, 0 };
             int32_t imm = EXTEND( (SBIT(21) << 9) | BITS(13:5), 0 );
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, imm, true, extended );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_imm( ops[2], imm, true, extended );
             return itypes[ BITS(23:22) ];
         }
 
@@ -933,8 +914,8 @@ static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, u
         {
             // Rd32 = #Ii
             int32_t imm = EXTEND( (SBITS(23:22) << 14) | (BITS(20:16) << 9) | BITS(13:5), 0);
-            add_reg( ops, REG_R(d5) );
-            add_imm( ops, imm, true, extended );
+            op_reg( ops[0], REG_R(d5) );
+            op_imm( ops[1], imm, true, extended );
             return Hex_mov;
         }
         break;
@@ -942,10 +923,10 @@ static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, u
     case 0b1010:
     case 0b1011: {
             // Rd32 = mux(Pu4,#Ii,#II)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_P(BITS(24:23)) );
-            add_imm( ops, EXTEND( SBITS(12:5), 0 ), true, extended );
-            add_imm( ops, (SBITS(22:16) << 1) | BIT(13), true );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_P(BITS(24:23)) );
+            op_imm( ops[2], EXTEND( SBITS(12:5), 0 ), true, extended );
+            op_imm( ops[3], (SBITS(22:16) << 1) | BIT(13), true );
             return Hex_mux;
         }
 
@@ -953,17 +934,17 @@ static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, u
         if( BIT(23) == 0 )
         {
             // Rdd32 = combine(#Ii,#II)
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_imm( ops, EXTEND( SBITS(12:5), 0 ), true, extended );
-            add_imm( ops, (SBITS(22:16) << 1) | BIT(13), true );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_imm( ops[1], EXTEND( SBITS(12:5), 0 ), true, extended );
+            op_imm( ops[2], (SBITS(22:16) << 1) | BIT(13), true );
             return Hex_combine;
         }
         if( BITS(23:21) == 0b100 )
         {
             // Rdd32 = combine(#Ii,#II)
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_imm( ops, SBITS(12:5), true );
-            add_imm( ops, EXTEND( (BITS(20:16) << 1) | BIT(13), 0 ), false, extended );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_imm( ops[1], SBITS(12:5), true );
+            op_imm( ops[2], EXTEND( (BITS(20:16) << 1) | BIT(13), 0 ), false, extended );
             return Hex_combine;
         }
         break;
@@ -972,11 +953,11 @@ static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, u
         if( BIT(20) == 0 )
         {
             // if ([!]Pu4[.new]) Rd32 = #Ii
-            add_reg( ops, REG_P(BITS(22:21)),
-                     (BIT(13)? REG_POST_NEW: 0) |
-                     (BIT(23)? REG_PRE_NOT: 0) );
-            add_reg( ops, REG_R(d5) );
-            add_imm( ops, EXTEND( (SBITS(19:16) << 8) | BITS(12:5), 0 ), true, extended );
+            op_reg( ops[PRED_A], REG_P(BITS(22:21)),
+                    (BIT(13)? REG_POST_NEW: 0) |
+                    (BIT(23)? REG_PRE_NOT: 0) );
+            op_reg( ops[0], REG_R(d5) );
+            op_imm( ops[1], EXTEND( (SBITS(19:16) << 8) | BITS(12:5), 0 ), true, extended );
             flags = PRED_REG;
             return Hex_mov;
         }
@@ -990,7 +971,7 @@ static uint32_t iclass_7_ALU2op( uint32_t word, uint64_t extender, op_t **ops, u
     return 0;
 }
 
-static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
 {
     uint32_t code, s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
 
@@ -1006,26 +987,26 @@ static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops,
                 Hex_svasrh, Hex_svlsrh, Hex_svaslh, 0,
             };
             if( (BITS(13:8) >> (6 - BITS(23:22))) != 0 ) return 0;
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_imm( ops, BITS(13:8) );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_imm( ops[2], BITS(13:8) );
             return itypes[ (BITS(23:22) << 2) | BITS(6:5) ];
         }
         if( BITS(23:21) == 0b001 && BITS(13:12) == 0 && BITS(7:5) == 0 )
         {
             // Rdd32 = vasrh(Rss32,#Ii):rnd [mapped from raw]
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_imm( ops, BITS(11:8) + 1 );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_imm( ops[2], BITS(11:8) + 1 );
             flags = IPO_RND;
             return Hex_svasrh;
         }
         if( BITS(23:21) == 0b110 && BITS(7:5) == 0b111 )
         {
             // Rdd32 = asr(Rss32,#Ii):rnd
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_imm( ops, BITS(13:8) );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_imm( ops[2], BITS(13:8) );
             flags = IPO_RND;
             return Hex_asr;
         }
@@ -1036,10 +1017,10 @@ static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops,
     case 0b1010: {
             // Rdd32 = {insert|extract[u]}(Rss32,#Ii,#II)
             static const uint8_t itypes[4] = { 0, Hex_extractu3, Hex_extract3, Hex_insert3 };
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_imm( ops, BITS(13:8) );
-            add_imm( ops, (BITS(23:21) << 3) | BITS(7:5) );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_imm( ops[2], BITS(13:8) );
+            op_imm( ops[3], (BITS(23:21) << 3) | BITS(7:5) );
             return itypes[ BITS(25:24) ];
         }
 
@@ -1054,9 +1035,9 @@ static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops,
             flags = ass[(BITS(23:22) << 1) | BIT(7)];
             if( !flags || !dbl && BIT(13) ) return 0;
 
-            add_reg( ops, REG_R(d5), dbl? REG_DOUBLE : 0 );
-            add_reg( ops, REG_R(s5), dbl? REG_DOUBLE : 0 );
-            add_imm( ops, BITS(13:8) );
+            op_reg( ops[0], REG_R(d5), dbl? REG_DOUBLE : 0 );
+            op_reg( ops[1], REG_R(s5), dbl? REG_DOUBLE : 0 );
+            op_imm( ops[2], BITS(13:8) );
             return itypes[ BITS(6:5) ];
         }
         break;
@@ -1065,34 +1046,34 @@ static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops,
         if( BITS(23:22) == 0b00 && BIT(13) == 0 && BITS(7:2) == 0 )
         {
             // Pd4 = [!]tstbit(Rs32,#Ii)
-            add_reg( ops, REG_P(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, BITS(12:8) );
+            op_reg( ops[0], REG_P(d5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_imm( ops[2], BITS(12:8) );
             flags = BIT(21)? IAT_NOT : 0;
             return Hex_tstbit;
         }
         if( BITS(23:21) == 0b010 && BITS(13:2) == 0 )
         {
             // Pd4 = Rs32
-            add_reg( ops, REG_P(d5) );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_P(d5) );
+            op_reg( ops[1], REG_R(s5) );
             return Hex_mov;
         }
         if( BITS(23:22) == 0b10 && BITS(7:2) == 0 )
         {
             // Pd4 = [!]bitsclr(Rs32,#Ii)
-            add_reg( ops, REG_P(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, BITS(13:8) );
+            op_reg( ops[0], REG_P(d5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_imm( ops[2], BITS(13:8) );
             flags = BIT(21)? IAT_NOT : 0;
             return Hex_bitsclr;
         }
         if( BITS(23:21) == 0b111 && BIT(13) == 0 && BITS(7:2) == 0 )
         {
             // Pd4 = sfclass(Rs32,#Ii)
-            add_reg( ops, REG_P(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, BITS(12:8) );
+            op_reg( ops[0], REG_P(d5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_imm( ops[2], BITS(12:8) );
             return Hex_sfclass;
         }
         break;
@@ -1101,8 +1082,8 @@ static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops,
         if( BITS(23:16) == 0 && BITS(13:10) == 0 && BITS(7:5) == 0 )
         {
             // Rdd32 = mask(Pt4)
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_reg( ops, REG_P(t5) );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_reg( ops[1], REG_P(t5) );
             return Hex_mask;
         }
         break;
@@ -1111,10 +1092,10 @@ static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops,
             // Rx32 = tableidx{b|h|w|d}(Rs32,#Ii,#II)
             static const uint16_t sz[4] = { SZ_B, SZ_H, SZ_W, SZ_D };
             flags = sz[ BITS(23:22) ];
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, (BIT(21) << 3) | BITS(7:5) );
-            add_imm( ops, SBITS(13:8) + BITS(23:22), true );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_imm( ops[2], (BIT(21) << 3) | BITS(7:5) );
+            op_imm( ops[3], SBITS(13:8) + BITS(23:22), true );
             return Hex_tableidx;
         }
 
@@ -1123,18 +1104,18 @@ static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops,
         {
             // Rd32 = vasrhub(Rss32,#Ii)[:rnd]:sat
             uint32_t imm = BITS(11:8);
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_imm( ops, BIT(5)? imm : imm + 1 );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_imm( ops[2], BIT(5)? imm : imm + 1 );
             flags = BIT(5)? IPO_SAT : IPO_RND_SAT; // mapped from raw
             return Hex_svasrhub;
         }
         if( BITS(23:21) == 0b011 && BITS(7:5) == 0b010 )
         {
             // Rd32 = add(clb(Rss32),#Ii)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_imm( ops, SBITS(13:8), true );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_imm( ops[2], SBITS(13:8), true );
             return Hex_add_clb;
         }
         break;
@@ -1143,17 +1124,17 @@ static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops,
         if( BITS(23:21) == 0b001 && BITS(7:5) == 0 )
         {
             // Rd32 = add(clb(Rs32),#Ii)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, SBITS(13:8), true );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_imm( ops[2], SBITS(13:8), true );
             return Hex_add_clb;
         }
         if( BITS(23:21) == 0b111 && BITS(7:5) == 2 )
         {
             // Rdd32 = cround(Rss32,#Ii)
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_imm( ops, BITS(13:8) );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_imm( ops[2], BITS(13:8) );
             return Hex_cround;
         }
         break;
@@ -1162,16 +1143,16 @@ static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops,
         if( BITS(23:18) == 0b000000 && BITS(13:10) == 0 && BITS(7:5) == 0 )
         {
             // Rd32 = vitpack(Ps4,Pt4)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_P(s5) );
-            add_reg( ops, REG_P(t5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_P(s5) );
+            op_reg( ops[2], REG_P(t5) );
             return Hex_svitpack;
         }
         if( BITS(23:18) == 0b010000 && BITS(13:5) == 0 )
         {
             // Rd32 = Ps4
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_P(s5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_P(s5) );
             return Hex_mov;
         }
         break;
@@ -1180,9 +1161,9 @@ static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops,
         if( BITS(23:21) == 0b111 && BITS(13:7) == 0 )
         {
             // Rd32,Pe4 = sfinvsqrta(Rs32)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_P(BITS(6:5)) );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_P(BITS(6:5)) );
+            op_reg( ops[2], REG_R(s5) );
             return Hex_sfinvsqrta;
         }
         break;
@@ -1191,18 +1172,18 @@ static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops,
         if( BIT(23) == 0 && s5 == 0 && BIT(13) == 1 )
         {
             // Rd32 = mask(#Ii,#II)
-            add_reg( ops, REG_R(d5) );
-            add_imm( ops, BITS(12:8) );
-            add_imm( ops, (BITS(22:21) << 3) | BITS(7:5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_imm( ops[1], BITS(12:8) );
+            op_imm( ops[2], (BITS(22:21) << 3) | BITS(7:5) );
             return Hex_mask2;
         }
         if( BIT(13) == 0 )
         {
             // Rd32 = extract[u](Rs32,#Ii,#II)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, BITS(12:8) );
-            add_imm( ops, (BITS(22:21) << 3) | BITS(7:5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_imm( ops[2], BITS(12:8) );
+            op_imm( ops[3], (BITS(22:21) << 3) | BITS(7:5) );
             return BIT(23)? Hex_extract3 : Hex_extractu3;
         }
         break;
@@ -1211,10 +1192,10 @@ static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops,
         if( BIT(23) == 0 && BIT(13) == 0 )
         {
             // Rd32 = insert(Rs32,#Ii,#II)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, BITS(12:8) );
-            add_imm( ops, (BITS(22:21) << 3) | BITS(7:5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_imm( ops[2], BITS(12:8) );
+            op_imm( ops[3], (BITS(22:21) << 3) | BITS(7:5) );
             return Hex_insert3;
         }
         break;
@@ -1244,9 +1225,9 @@ static uint32_t iclass_8_S2op( uint32_t word, uint64_t /*extender*/, op_t **ops,
         case 0b1111110: code = Hex_round2, flags = IPO_SAT; break;
         default: goto __next;
         }
-        add_reg( ops, REG_R(d5), FLG_D(dreg) );
-        add_reg( ops, REG_R(s5), FLG_S(dreg) );
-        add_imm( ops, BITS(12:8) );
+        op_reg( ops[0], REG_R(d5), FLG_D(dreg) );
+        op_reg( ops[1], REG_R(s5), FLG_S(dreg) );
+        op_imm( ops[2], BITS(12:8) );
         return code;
     }
 
@@ -1347,8 +1328,8 @@ __next:
         case 0b1100110111: code = Hex_sat, flags = SZ_B; break;
         default: goto __next2;
         }
-        add_reg( ops, REG_R(d5), BIT(27) == 0? REG_DOUBLE : 0 );
-        add_reg( ops, REG_R(s5), BITS(26:24) == 0? REG_DOUBLE : 0 );
+        op_reg( ops[0], REG_R(d5), BIT(27) == 0? REG_DOUBLE : 0 );
+        op_reg( ops[1], REG_R(s5), BITS(26:24) == 0? REG_DOUBLE : 0 );
         return code;
     }
 __next2:
@@ -1362,7 +1343,7 @@ static const uint8_t mtypes_cl9[16][3] = {
     { MEM_W, 2, 0 },            { 255 },           { MEM_D, 3, 1 },            { 255 },
 };
 
-static uint32_t iclass_9_LD( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+static uint32_t iclass_9_LD( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), d5 = BITS(4:0);
     const uint8_t *mtype = mtypes_cl9[ BITS(24:21) ];
@@ -1372,18 +1353,18 @@ static uint32_t iclass_9_LD( uint32_t word, uint64_t extender, op_t **ops, uint3
     {
         // Rd32 = memXX(Rs32+#Ii)
         int32_t imm = EXTEND( (SBITS(26:25) << 9) | BITS(13:5), mtype[1] );
-        add_reg( ops, REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
-        add_mem_ind( ops, mtype[0], REG_R(s5), imm, extended );
+        op_reg( ops[0], REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
+        op_mem_ind( ops[1], mtype[0], REG_R(s5), imm, extended );
         return Hex_mov;
     }
     if( BITS(27:24) == 0b1011 && mtype[0] != 255 && BIT(13) == 1 )
     {
         // if ([!]Pt4[.new]) Rd32 = memXX(Rx32++#Ii)
-        add_reg( ops, REG_P(BITS(10:9)),
-                 (BIT(11)? REG_PRE_NOT : 0) |
-                 (BIT(12)? REG_POST_NEW : 0) );
-        add_reg( ops, REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
-        add_mem_inc( ops, o_mem_inc_imm, mtype[0], REG_R(s5), SBITS(8:5) << mtype[1] );
+        op_reg( ops[PRED_A], REG_P(BITS(10:9)),
+                (BIT(11)? REG_PRE_NOT : 0) |
+                (BIT(12)? REG_POST_NEW : 0) );
+        op_reg( ops[0], REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
+        op_mem_inc( ops[1], o_mem_inc_imm, mtype[0], REG_R(s5), SBITS(8:5) << mtype[1] );
         flags = PRED_REG;
         return Hex_mov;
     }
@@ -1397,8 +1378,8 @@ static uint32_t iclass_9_LD( uint32_t word, uint64_t extender, op_t **ops, uint3
         if( !otype || !has_mu && mu || !has_imm && imm )
             return 0;
 
-        add_reg( ops, REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
-        add_mem_inc( ops, otype, mtype[0], REG_R(s5), imm, mu? REG_M1 : REG_M0 );
+        op_reg( ops[0], REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
+        op_mem_inc( ops[1], otype, mtype[0], REG_R(s5), imm, mu? REG_M1 : REG_M0 );
         return Hex_mov;
     }
     if( BITS(27:21) == 0b0000000 && BITS(13:5) == 0 )
@@ -1406,8 +1387,8 @@ static uint32_t iclass_9_LD( uint32_t word, uint64_t extender, op_t **ops, uint3
         // Rdd32 = deallocframe(Rs32):raw
         if( REG_R(d5) == REG_FP && REG_R(s5) == REG_FP )
             return Hex_deallocframe; // simplify
-        add_reg( ops, REG_R(d5), REG_DOUBLE );
-        add_reg( ops, REG_R(s5) );
+        op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+        op_reg( ops[1], REG_R(s5) );
         return Hex_deallocframe_raw;
     }
     if( BITS(27:21) == 0b0110000 && BIT(10) == 0 && BITS(7:5) == 0 )
@@ -1416,51 +1397,51 @@ static uint32_t iclass_9_LD( uint32_t word, uint64_t extender, op_t **ops, uint3
         uint32_t cond = BITS(13:11);
         if( cond == 4 || cond == 0 && BITS(9:8) != 0 ) return 0;
         if( cond ) {
-            add_reg( ops, REG_P(BITS(9:8)),
-                     (BIT(13)? REG_PRE_NOT : 0) |
-                     (BIT(11)? REG_POST_NEW : 0) );
+            op_reg( ops[PRED_A], REG_P(BITS(9:8)),
+                    (BIT(13)? REG_PRE_NOT : 0) |
+                    (BIT(11)? REG_POST_NEW : 0) );
             flags = PRED_REG |
                     (BITS(12:11) == 3? JMP_T : BITS(12:11) == 1? JMP_NT : 0);
         }
         if( REG_R(d5) == REG_FP && REG_R(s5) == REG_FP )
             return Hex_return; // simplify
-        add_reg( ops, REG_R(d5), REG_DOUBLE );
-        add_reg( ops, REG_R(s5) );
+        op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+        op_reg( ops[1], REG_R(s5) );
         return Hex_return_raw;
     }
     if( BITS(27:21) == 0b0010000 && BIT(13) == 0 && BITS(11:5) == 0 )
     {
         // Rd32 = memX_locked(Rs32)
-        add_reg( ops, REG_R(d5), BIT(12)? REG_DOUBLE : 0 );
-        add_mem_locked( ops, BIT(12)? MEM_D : MEM_W, REG_R(s5) );
+        op_reg( ops[0], REG_R(d5), BIT(12)? REG_DOUBLE : 0 );
+        op_mem_locked( ops[1], BIT(12)? MEM_D : MEM_W, REG_R(s5) );
         return Hex_mov;
     }
     if( BITS(27:21) == 0b0010000 && BIT(13) == 1 && BITS(7:5) == 0 )
     {
         // Rd32 = memw_phys(Rs32,Rt32)
-        add_reg( ops, REG_R(d5) );
-        add_reg( ops, REG_R(s5) );
-        add_reg( ops, REG_R(BITS(12:8)) );
+        op_reg( ops[0], REG_R(d5) );
+        op_reg( ops[1], REG_R(s5) );
+        op_reg( ops[2], REG_R(BITS(12:8)) );
         return Hex_ldphys;
     }
     if( BITS(27:21) == 0b0010000 && BITS(7:0) == 0b01000000 )
     {
         // memcpy(Rs32,Rt32,Mu2)
-        add_reg( ops, REG_R(s5) );
-        add_reg( ops, REG_R(BITS(12:8)) );
-        add_reg( ops, REG_P(BIT(13)) );
+        op_reg( ops[0], REG_R(s5) );
+        op_reg( ops[1], REG_R(BITS(12:8)) );
+        op_reg( ops[2], REG_P(BIT(13)) );
         return Hex_memcpy;
     }
     if( BITS(27:21) == 0b0100000 && BITS(13:11) == 0 )
     {
         // dcfetch(Rs32+#Ii)
-        add_reg_off( ops, REG_R(s5), BITS(10:0) << 3 );
+        op_reg_off( ops[0], REG_R(s5), BITS(10:0) << 3 );
         return Hex_dcfetch;
     }
     return 0;
 }
 
-static uint32_t iclass_9_LD_EXT( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+static uint32_t iclass_9_LD_EXT( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     // all instructions below must extend
     if( !extender ) return 0;
@@ -1471,8 +1452,8 @@ static uint32_t iclass_9_LD_EXT( uint32_t word, uint64_t extender, op_t **ops, u
     {
         // Rd32 = memXX(Re32=#II)
         uint32_t imm = MUST_EXTEND( (BITS(11:8) << 2) | BITS(6:5) );
-        add_reg( ops, REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
-        add_mem_abs_set( ops, mtype[0], REG_R(s5), imm );
+        op_reg( ops[0], REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
+        op_mem_abs_set( ops[1], mtype[0], REG_R(s5), imm );
         return Hex_mov;
     }
     if( BITS(27:25) == 0b110 && mtype[0] != 255 && BIT(12) == 1 )
@@ -1480,26 +1461,26 @@ static uint32_t iclass_9_LD_EXT( uint32_t word, uint64_t extender, op_t **ops, u
         // Rd32 = memXX(Rt32<<#Ii+#II)
         uint32_t u2 = (BIT(13) << 1) | BIT(7);
         uint32_t imm = MUST_EXTEND( (BITS(11:8) << 2) | BITS(6:5) );
-        add_reg( ops, REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
-        add_mem_abs_off( ops, mtype[0], REG_R(s5), u2, imm );
+        op_reg( ops[0], REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
+        op_mem_abs_off( ops[1], mtype[0], REG_R(s5), u2, imm );
         return Hex_mov;
     }
     if( BITS(27:24) == 0b1111 && mtype[0] != 255 && BIT(13) == 1 && BITS(7:5) == 0b100 )
     {
         // if ([!]Pt4[.new]) Rd32 = memXX(#II)
         uint32_t imm = MUST_EXTEND( (BITS(20:16) << 1) | BIT(8) );
-        add_reg( ops, REG_P(BITS(10:9)),
-                 (BIT(11)? REG_PRE_NOT : 0) |
-                 (BIT(12)? REG_POST_NEW : 0) );
-        add_reg( ops, REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
-        add_mem_abs( ops, mtype[0], imm );
+        op_reg( ops[PRED_A], REG_P(BITS(10:9)),
+                (BIT(11)? REG_PRE_NOT : 0) |
+                (BIT(12)? REG_POST_NEW : 0) );
+        op_reg( ops[0], REG_R(d5), mtype[2]? REG_DOUBLE : 0 );
+        op_mem_abs( ops[1], mtype[0], imm );
         flags = PRED_REG;
         return Hex_mov;
     }
     return 0;
 }
 
-static uint32_t iclass_10_ST( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+static uint32_t iclass_10_ST( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8);
     uint32_t code = BITS(23:21), code_nv = BITS(12:11);
@@ -1509,33 +1490,37 @@ static uint32_t iclass_10_ST( uint32_t word, uint64_t extender, op_t **ops, uint
     if( BITS(27:21) == 0b0000100 && BITS(13:11) == 0 )
     {
         // allocframe(Rx32,#Ii):raw
-        if( REG_R(s5) != REG_SP ) // simplify?
-            add_reg( ops, REG_R(s5) );
-        add_imm( ops, BITS(10:0) << 3 );
-        return REG_R(s5) != REG_SP? Hex_allocframe_raw : Hex_allocframe;
+        if( REG_R(s5) == REG_SP ) { // simplify
+            op_imm( ops[0], BITS(10:0) << 3 );
+            return Hex_allocframe;
+        } else {
+            op_reg( ops[0], REG_R(s5) );
+            op_imm( ops[1], BITS(10:0) << 3 );
+            return Hex_allocframe_raw;
+        }
     }
     if( BIT(27) == 0 && BIT(24) == 1 && type != 255 )
     {
         // memX(Rs32+#Ii) = Rt32[.h|.new]
         int32_t imm = EXTEND( (SBITS(26:25) << 9) | (BIT(13) << 8) | BITS(7:0), mem_shift( type ) );
-        add_mem_ind( ops, type, REG_R(s5), imm, extended );
-        add_reg( ops, code == 5? new_value( BITS(10:8) ) : REG_R(t5),
-                 code == 5? REG_POST_NEW :
-                 code == 3? REG_POST_HI :
-                 code == 6? REG_DOUBLE : 0 );
+        op_mem_ind( ops[0], type, REG_R(s5), imm, extended );
+        op_reg( ops[1], code == 5? new_value( BITS(10:8) ) : REG_R(t5),
+                code == 5? REG_POST_NEW :
+                code == 3? REG_POST_HI :
+                code == 6? REG_DOUBLE : 0 );
         return Hex_mov;
     }
     if( BITS(27:24) == 0b1011 && BIT(13) == 1 && type != 255 )
     {
         // if ([!]Pt4[.new]) memX(Rx32++#Ii) = Rt[t]32[.h|.new]
-        add_reg( ops, REG_P(BITS(1:0)),
-                 (BIT(2)? REG_PRE_NOT : 0) |
-                 (BIT(7)? REG_POST_NEW : 0) );
-        add_mem_inc( ops, o_mem_inc_imm, type, REG_R(s5), SBITS(6:3) << mem_shift( type ) );
-        add_reg( ops, code == 5? new_value( BITS(10:8) ) : REG_R(t5),
-                 code == 5? REG_POST_NEW :
-                 code == 3? REG_POST_HI :
-                 code == 6? REG_DOUBLE : 0 );
+        op_reg( ops[PRED_A], REG_P(BITS(1:0)),
+                (BIT(2)? REG_PRE_NOT : 0) |
+                (BIT(7)? REG_POST_NEW : 0) );
+        op_mem_inc( ops[0], o_mem_inc_imm, type, REG_R(s5), SBITS(6:3) << mem_shift( type ) );
+        op_reg( ops[1], code == 5? new_value( BITS(10:8) ) : REG_R(t5),
+                code == 5? REG_POST_NEW :
+                code == 3? REG_POST_HI :
+                code == 6? REG_DOUBLE : 0 );
         flags = PRED_REG;
         return Hex_mov;
     }
@@ -1549,24 +1534,24 @@ static uint32_t iclass_10_ST( uint32_t word, uint64_t extender, op_t **ops, uint
         if( !otype || !has_mu && mu || !has_imm && imm )
             return 0;
 
-        add_mem_inc( ops, otype, type, REG_R(s5), imm, mu? REG_M1 : REG_M0 );
-        add_reg( ops, code == 5? new_value( BITS(10:8) ) : REG_R(t5),
-                 code == 5? REG_POST_NEW :
-                 code == 3? REG_POST_HI :
-                 code == 6? REG_DOUBLE : 0 );
+        op_mem_inc( ops[0], otype, type, REG_R(s5), imm, mu? REG_M1 : REG_M0 );
+        op_reg( ops[1], code == 5? new_value( BITS(10:8) ) : REG_R(t5),
+                code == 5? REG_POST_NEW :
+                code == 3? REG_POST_HI :
+                code == 6? REG_DOUBLE : 0 );
         return Hex_mov;
     }
     if( BITS(27:23) == 0b00001 && BIT(21) == 1 && BIT(13) == 0 && BITS(7:2) == 0 )
     {
         // memX_locked(Rs32,Pd4) = Rt[t]32
-        add_mem_locked( ops, BIT(22)? MEM_D : MEM_W, REG_R(s5), REG_P(BITS(1:0)) );
-        add_reg( ops, REG_R(t5), BIT(22)? REG_DOUBLE : 0 );
+        op_mem_locked( ops[0], BIT(22)? MEM_D : MEM_W, REG_R(s5), REG_P(BITS(1:0)) );
+        op_reg( ops[1], REG_R(t5), BIT(22)? REG_DOUBLE : 0 );
         return Hex_mov;
     }
     return 0;
 }
 
-static uint32_t iclass_10_ST_EXT( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+static uint32_t iclass_10_ST_EXT( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     // all instructions here must extend
     if( !extender ) return 0;
@@ -1579,11 +1564,11 @@ static uint32_t iclass_10_ST_EXT( uint32_t word, uint64_t extender, op_t **ops, 
     {
         // memX(Re32=#II) = Rt[t]32[.h|.new]
         uint32_t imm = MUST_EXTEND( BITS(5:0) );
-        add_mem_abs_set( ops, type, REG_R(s5), imm );
-        add_reg( ops, code == 5? new_value( BITS(10:8) ) : REG_R(t5),
-                 code == 5? REG_POST_NEW :
-                 code == 3? REG_POST_HI :
-                 code == 6? REG_DOUBLE : 0 );
+        op_mem_abs_set( ops[0], type, REG_R(s5), imm );
+        op_reg( ops[1], code == 5? new_value( BITS(10:8) ) : REG_R(t5),
+                code == 5? REG_POST_NEW :
+                code == 3? REG_POST_HI :
+                code == 6? REG_DOUBLE : 0 );
         return Hex_mov;
     }
     if( BITS(27:24) == 0b1101 && type != 255 && BIT(7) == 1 )
@@ -1591,42 +1576,42 @@ static uint32_t iclass_10_ST_EXT( uint32_t word, uint64_t extender, op_t **ops, 
         // memX(Ru32<<#Ii+#II) = Rt[t]32[.h|.new]
         uint32_t u2 = (BIT(13) << 1) | BIT(6);
         uint32_t imm = MUST_EXTEND( BITS(5:0) );
-        add_mem_abs_off( ops, type, REG_R(s5), u2, imm );
-        add_reg( ops, code == 5? new_value( BITS(10:8) ) : REG_R(t5),
-                 code == 5? REG_POST_NEW :
-                 code == 3? REG_POST_HI :
-                 code == 6? REG_DOUBLE : 0 );
+        op_mem_abs_off( ops[0], type, REG_R(s5), u2, imm );
+        op_reg( ops[1], code == 5? new_value( BITS(10:8) ) : REG_R(t5),
+                code == 5? REG_POST_NEW :
+                code == 3? REG_POST_HI :
+                code == 6? REG_DOUBLE : 0 );
         return Hex_mov;
     }
     if( BITS(27:24) == 0b1111 && BITS(20:18) == 0 && type != 255 && BIT(7) == 1 )
     {
         // if ([!]Pv4[.new]) memX(#II) = Rt[t]32[.h|.new]
         uint32_t imm = MUST_EXTEND( (BITS(17:16) << 4) | BITS(6:3) );
-        add_reg( ops, REG_P(BITS(1:0)),
-                 (BIT(2)? REG_PRE_NOT : 0) |
-                 (BIT(13)? REG_POST_NEW : 0) );
-        add_mem_abs( ops, type, imm );
-        add_reg( ops, code == 5? new_value( BITS(10:8) ) : REG_R(t5),
-                 code == 5? REG_POST_NEW :
-                 code == 3? REG_POST_HI :
-                 code == 6? REG_DOUBLE : 0 );
+        op_reg( ops[PRED_A], REG_P(BITS(1:0)),
+                (BIT(2)? REG_PRE_NOT : 0) |
+                (BIT(13)? REG_POST_NEW : 0) );
+        op_mem_abs( ops[0], type, imm );
+        op_reg( ops[1], code == 5? new_value( BITS(10:8) ) : REG_R(t5),
+                code == 5? REG_POST_NEW :
+                code == 3? REG_POST_HI :
+                code == 6? REG_DOUBLE : 0 );
         flags = PRED_REG;
         return Hex_mov;
     }
     return 0;
 }
 
-static uint32_t iclass_11_ADDI( uint32_t word, uint64_t extender, op_t **ops, uint32_t &/*flags*/ )
+static uint32_t iclass_11_ADDI( uint32_t word, uint64_t extender, op_t *ops, uint32_t &/*flags*/ )
 {
     bool extended = extender != 0;
     // Rd32 = add(Rs32,#Ii)
-    add_reg( ops, REG_R( BITS(4:0) ) );
-    add_reg( ops, REG_R( BITS(20:16) ) );
-    add_imm( ops, EXTEND( (SBITS(27:21) << 9) | BITS(13:5), 0 ), true, extended );
+    op_reg( ops[0], REG_R( BITS(4:0) ) );
+    op_reg( ops[1], REG_R( BITS(20:16) ) );
+    op_imm( ops[2], EXTEND( (SBITS(27:21) << 9) | BITS(13:5), 0 ), true, extended );
     return Hex_add;
 }
 
-static uint32_t iclass_12_S3op( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+static uint32_t iclass_12_S3op( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
     uint32_t code = BITS(27:21);
@@ -1634,11 +1619,11 @@ static uint32_t iclass_12_S3op( uint32_t word, uint64_t /*extender*/, op_t **ops
     if( (code & ~0b0010100) == 0b0000000 && BIT(13) == 0 && !(BIT(25) && BIT(7)) )
     {
         // Rdd32 = v{align|splice}b(Rtt32,Rss32,{#Ii|Pu4})
-        add_reg( ops, REG_R(d5), REG_DOUBLE );
-        add_reg( ops, REG_R(s5), REG_DOUBLE );
-        add_reg( ops, REG_R(t5), REG_DOUBLE );
-        if( BIT(25)) add_reg( ops, REG_P(BITS(6:5)) );
-        else         add_imm( ops, BITS(7:5) );
+        op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+        op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+        op_reg( ops[2], REG_R(t5), REG_DOUBLE );
+        if( BIT(25)) op_reg( ops[3], REG_P(BITS(6:5)) );
+        else         op_imm( ops[3], BITS(7:5) );
         return BIT(23)? Hex_svspliceb : Hex_svalignb;
     }
     if( (code == 0b0011100 || code == 0b0110010) && BIT(13) == 0 && BIT(5) == 0 )
@@ -1646,9 +1631,9 @@ static uint32_t iclass_12_S3op( uint32_t word, uint64_t /*extender*/, op_t **ops
         // Rd[d]32 = {a|l}s{r|l}(Rs[s]32,Rt32)
         static const uint8_t shifts[4] = { Hex_asr, Hex_lsr, Hex_asl, Hex_lsl };
 
-        add_reg( ops, REG_R(d5), BIT(24)? REG_DOUBLE : 0 );
-        add_reg( ops, REG_R(s5), BIT(24)? REG_DOUBLE : 0 );
-        add_reg( ops, REG_R(t5) );
+        op_reg( ops[0], REG_R(d5), BIT(24)? REG_DOUBLE : 0 );
+        op_reg( ops[1], REG_R(s5), BIT(24)? REG_DOUBLE : 0 );
+        op_reg( ops[2], REG_R(t5) );
         return shifts[ BITS(7:6) ];
     }
     while( (BITS(27:24) == 0b1011 || BITS(27:24) == 0b1100 && BIT(21) == 0) &&
@@ -1660,72 +1645,72 @@ static uint32_t iclass_12_S3op( uint32_t word, uint64_t /*extender*/, op_t **ops
         flags = assign[ BITS(23:21) ];
         if( !flags ) break;
 
-        add_reg( ops, REG_R(d5), BIT(24)? REG_DOUBLE : 0 );
-        add_reg( ops, REG_R(s5), BIT(24)? REG_DOUBLE : 0 );
-        add_reg( ops, REG_R(t5) );
+        op_reg( ops[0], REG_R(d5), BIT(24)? REG_DOUBLE : 0 );
+        op_reg( ops[1], REG_R(s5), BIT(24)? REG_DOUBLE : 0 );
+        op_reg( ops[2], REG_R(t5) );
         return shifts[ BITS(7:6) ];
     }
     if( BITS(27:22) == 0b001011 && BIT(13) == 0 && BIT(7) == 0 )
     {
         // Rdd32 = {add|sub}(Rss32,Rtt32,Px4):carry
-        add_reg( ops, REG_R(d5), REG_DOUBLE );
-        add_reg( ops, REG_R(s5), REG_DOUBLE );
-        add_reg( ops, REG_R(t5), REG_DOUBLE );
-        add_reg( ops, REG_P(BITS(6:5)) );
+        op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+        op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+        op_reg( ops[2], REG_R(t5), REG_DOUBLE );
+        op_reg( ops[3], REG_P(BITS(6:5)) );
         flags = IPO_CARRY;
         return BIT(21)? Hex_subc : Hex_addc;
     }
     if( code == 30 && BITS(7:6) == 0b11 )
     {
         // Rdd32 = vrcrotate(Rss32,Rt32,#Ii)
-        add_reg( ops, REG_R(d5), REG_DOUBLE );
-        add_reg( ops, REG_R(s5), REG_DOUBLE );
-        add_reg( ops, REG_R(t5) );
-        add_imm( ops, (BIT(13) << 1) | BIT(5) );
+        op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+        op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+        op_reg( ops[2], REG_R(t5) );
+        op_imm( ops[3], (BIT(13) << 1) | BIT(5) );
         return Hex_svrcrotate;
     }
     if( code == 93 && BITS(7:6) == 0b00 )
     {
         // Rxx32 += vrcrotate(Rss32,Rt32,#Ii)
-        add_reg( ops, REG_R(d5), REG_DOUBLE );
-        add_reg( ops, REG_R(s5), REG_DOUBLE );
-        add_reg( ops, REG_R(t5) );
-        add_imm( ops, (BIT(13) << 1) | BIT(5) );
+        op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+        op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+        op_reg( ops[2], REG_R(t5) );
+        op_imm( ops[3], (BIT(13) << 1) | BIT(5) );
         flags = IAT_ADD;
         return Hex_svrcrotate;
     }
     if( code == 32 && BIT(13) == 0 )
     {
         // Rd32 = addasl(Rt32,Rs32,#Ii)
-        add_reg( ops, REG_R(d5) );
-        add_reg( ops, REG_R(s5) );
-        add_reg( ops, REG_R(t5) );
-        add_imm( ops, BITS(7:5) );
+        op_reg( ops[0], REG_R(d5) );
+        op_reg( ops[1], REG_R(s5) );
+        op_reg( ops[2], REG_R(t5) );
+        op_imm( ops[3], BITS(7:5) );
         return Hex_addasl;
     }
     if( code == 40 && BIT(13) == 0 && BIT(7) == 1 )
     {
         // Rd32 = cmpy{i|r}wh(Rss32,Rt32[*]):<<1:rnd:sat
-        add_reg( ops, REG_R(d5) );
-        add_reg( ops, REG_R(s5), REG_DOUBLE );
-        add_reg( ops, REG_R(t5), BIT(5)? REG_POST_CONJ : 0 );
+        op_reg( ops[0], REG_R(d5) );
+        op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+        op_reg( ops[2], REG_R(t5), BIT(5)? REG_POST_CONJ : 0 );
         flags = IPO_LS1_RND_SAT;
         return BIT(6)? Hex_cmpyrwh : Hex_cmpyiwh;
     }
     if( code == 52 && BIT(13) == 0 && BITS(7:6) == 3 )
     {
         // Rd32 = lsl(#Ii,Rt32)
-        add_reg( ops, REG_R(d5) );
-        add_imm( ops, (SBITS(20:16) << 1) | BIT(5), true );
-        add_reg( ops, REG_R(t5) );
+        op_reg( ops[0], REG_R(d5) );
+        op_imm( ops[1], (SBITS(20:16) << 1) | BIT(5), true );
+        op_reg( ops[2], REG_R(t5) );
         return Hex_lsl;
     }
     if( 56 <= code && code <= 61 && BIT(13) == 0 && BITS(7:2) == 0 )
     {
         // Pd4 = [!}{tstbit|bitsset|bitsclr}(Rs32,Rt32)
-        add_reg( ops, REG_P(d5) );
-        add_reg( ops, REG_R(s5) );
-        add_reg( ops, REG_R(t5) );
+        op_reg( ops[0], REG_P(d5) );
+        op_reg( ops[1], REG_R(s5) );
+        op_reg( ops[2], REG_R(t5) );
         flags = BIT(21)? IAT_NOT : 0;
         return BIT(22)? Hex_bitsset : BIT(23)? Hex_bitsclr : Hex_tstbit;
     }
@@ -1736,9 +1721,9 @@ static uint32_t iclass_12_S3op( uint32_t word, uint64_t /*extender*/, op_t **ops
             ~0u, ~0u, SZ_B | CMP_GT, SZ_H | CMP_EQ,
             SZ_H | CMP_GT, SZ_H | CMP_GTU, SZ_B | CMP_EQ, SZ_B | CMP_GTU
         };
-        add_reg( ops, REG_P(d5) );
-        add_reg( ops, REG_R(s5) );
-        add_reg( ops, REG_R(t5) );
+        op_reg( ops[0], REG_P(d5) );
+        op_reg( ops[1], REG_R(s5) );
+        op_reg( ops[2], REG_R(t5) );
         flags = cond[ BITS(7:5) ];
         return Hex_cmp;
     }
@@ -1748,9 +1733,9 @@ static uint32_t iclass_12_S3op( uint32_t word, uint64_t /*extender*/, op_t **ops
         static const uint32_t cond[8] = { CMP_GE, CMP_UO, ~0u, CMP_EQ, CMP_GT, ~0u, ~0u, ~0u };
         if( cond[ BITS(7:5) ] == ~0u ) return 0;
 
-        add_reg( ops, REG_P(d5) );
-        add_reg( ops, REG_R(s5) );
-        add_reg( ops, REG_R(t5) );
+        op_reg( ops[0], REG_P(d5) );
+        op_reg( ops[1], REG_R(s5) );
+        op_reg( ops[2], REG_R(t5) );
         flags = cond[ BITS(7:5) ];
         return Hex_sfcmp;
     }
@@ -1759,9 +1744,9 @@ static uint32_t iclass_12_S3op( uint32_t word, uint64_t /*extender*/, op_t **ops
         // Rxx32 = vr{max|min}%s(Rss32,Ru32)
         static const uint16_t sz[4] = { SZ_H, SZ_W, SZ_UH, SZ_UW };
         // the order of registers is fucked up
-        add_reg( ops, REG_R(t5), REG_DOUBLE );
-        add_reg( ops, REG_R(s5), REG_DOUBLE );
-        add_reg( ops, REG_R(d5) );
+        op_reg( ops[0], REG_R(t5), REG_DOUBLE );
+        op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+        op_reg( ops[2], REG_R(d5) );
         flags = sz[ (BIT(13) << 1) | BIT(6) ];
         return BIT(7)? Hex_svrmin : Hex_svrmax;
     }
@@ -1832,13 +1817,13 @@ static uint32_t iclass_12_S3op( uint32_t word, uint64_t /*extender*/, op_t **ops
     case 0b10110011111: code = Hex_svrcnegh,   dreg = DD|SS, flags = IAT_ADD; break;
     default: return 0;
     }
-    add_reg( ops, REG_R(d5), FLG_D(dreg) );
-    add_reg( ops, REG_R(s5), FLG_S(dreg) );
-    add_reg( ops, REG_R(t5), FLG_T(dreg) );
+    op_reg( ops[0], REG_R(d5), FLG_D(dreg) );
+    op_reg( ops[1], REG_R(s5), FLG_S(dreg) );
+    op_reg( ops[2], REG_R(t5), FLG_T(dreg) );
     return code;
 }
 
-static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     uint32_t code, s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
     bool extended = extender != 0;
@@ -1849,9 +1834,9 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
         if( BITS(23:21) == 0 && BIT(13) == 0 && BITS(7:5) == 0 )
         {
             // Rd32 = parity(Rss32,Rtt32)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_reg( ops, REG_R(t5), REG_DOUBLE );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_reg( ops[2], REG_R(t5), REG_DOUBLE );
             return Hex_parity;
         }
         break;
@@ -1860,10 +1845,10 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
         if( BITS(23:21) == 0 && BIT(13) == 0 && BIT(7) == 0 )
         {
             // Rdd32 = vmux(Pu4,Rss32,Rtt32)
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_reg( ops, REG_P(BITS(6:5)) );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_reg( ops, REG_R(t5), REG_DOUBLE );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_reg( ops[1], REG_P(BITS(6:5)) );
+            op_reg( ops[2], REG_R(s5), REG_DOUBLE );
+            op_reg( ops[3], REG_R(t5), REG_DOUBLE );
             return Hex_svmux;
         }
         break;
@@ -1880,42 +1865,42 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
             };
             flags = flg[ (BIT(13) << 3) | BITS(7:5) ];
             if( !flags ) break;
-            add_reg( ops, REG_P(BITS(1:0)) );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_reg( ops, REG_R(t5), REG_DOUBLE );
+            op_reg( ops[0], REG_P(BITS(1:0)) );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_reg( ops[2], REG_R(t5), REG_DOUBLE );
             return Hex_svcmp;
         }
         if( BITS(23:21) == 0 && BIT(13) == 1 && BITS(7:6) == 0 && BITS(4:2) == 0 )
         {
             // Pd4 = [!]any8(vcmpb.eq(Rss32,Rtt32))
-            add_reg( ops, REG_P(BITS(1:0)) );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_reg( ops, REG_R(t5), REG_DOUBLE );
+            op_reg( ops[0], REG_P(BITS(1:0)) );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_reg( ops[2], REG_R(t5), REG_DOUBLE );
             flags = (BIT(5)? IAT_NOT : 0) | CMP_EQ;
             return Hex_svcmpbeq_any;
         }
         if( BITS(23:21) == 0 && BIT(13) == 1 && BITS(7:2) == 0x18 )
         {
             // Pd4 = tlbmatch(Rss32,Rt32)
-            add_reg( ops, REG_P(BITS(1:0)) );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_reg( ops, REG_R(t5) );
+            op_reg( ops[0], REG_P(BITS(1:0)) );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_reg( ops[2], REG_R(t5) );
             return Hex_tlbmatch;
         }
         if( BITS(23:21) == 0 && BIT(13) == 1 && (BITS(7:2) == 0x20 || BITS(7:2) == 0x28) )
         {
             // Pd4 = boundscheck(Rs32,Rtt32) [mapped from raw]
-            add_reg( ops, REG_P(BITS(1:0)) );
-            add_reg( ops, REG_R(s5) + BIT(5) );
-            add_reg( ops, REG_R(t5), REG_DOUBLE );
+            op_reg( ops[0], REG_P(BITS(1:0)) );
+            op_reg( ops[1], REG_R(s5) + BIT(5) );
+            op_reg( ops[2], REG_R(t5), REG_DOUBLE );
             return Hex_boundscheck;
         }
         if( BITS(23:21) == 0b100 && BIT(13) == 0 && BITS(7:6) != 0b11 && BITS(5:0) <= 3 )
         {
             // Pd4 = cmp.{eq|gt|gtu}(Rss32,Rtt32)
-            add_reg( ops, REG_P(BITS(1:0)) );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_reg( ops, REG_R(t5), REG_DOUBLE );
+            op_reg( ops[0], REG_P(BITS(1:0)) );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_reg( ops[2], REG_R(t5), REG_DOUBLE );
             flags = BITS(7:6) << CMP_SHIFT;
             return Hex_cmp;
         }
@@ -1923,9 +1908,9 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
         {
             // Pd4 = dfcmp.{eq|gt|ge|uo}(Rss32,Rtt32)
             static const uint32_t cmp[4] = { CMP_EQ, CMP_GT, CMP_GE, CMP_UO };
-            add_reg( ops, REG_P(BITS(1:0)) );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_reg( ops, REG_R(t5), REG_DOUBLE );
+            op_reg( ops[0], REG_P(BITS(1:0)) );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_reg( ops[2], REG_R(t5), REG_DOUBLE );
             flags = cmp[ BITS(6:5) ];
             return Hex_dfcmp;
         }
@@ -1940,18 +1925,18 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
                 Hex_svaddub, Hex_svaddub, Hex_svaddh, Hex_svaddh, Hex_svadduh, Hex_svaddw, Hex_svaddw, Hex_add,
                 Hex_svsubub, Hex_svsubub, Hex_svsubh, Hex_svsubh, Hex_svsubuh, Hex_svsubw, Hex_svsubw, Hex_sub,
             };
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_reg( ops, REG_R(t5), REG_DOUBLE );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_reg( ops[2], REG_R(t5), REG_DOUBLE );
             flags = (BIT(5) ^ BIT(7))? IPO_SAT : 0;
             return itypes[ (BIT(21) << 3) | BITS(7:5) ];
         }
         if( BITS(23:21) == 0b011 && BITS(7:6) == 0b11 )
         {
             // Rdd32 = add(Rs32,Rtt32) [mapped from raw]
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_reg( ops, REG_R(s5) + BIT(5) );
-            add_reg( ops, REG_R(t5), REG_DOUBLE );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_reg( ops[1], REG_R(s5) + BIT(5) );
+            op_reg( ops[2], REG_R(t5), REG_DOUBLE );
             return Hex_add;
         }
         if( BITS(23:21) == 0b101 || BITS(23:21) == 0b110 )
@@ -1961,30 +1946,30 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
                 Hex_svmaxub, Hex_svmaxh, Hex_svmaxuh, Hex_svmaxw, Hex_max,     Hex_maxu,    Hex_svmaxb, Hex_svminb,
                 Hex_svminub, Hex_svminh, Hex_svminuh, Hex_svminw, Hex_svminuw, Hex_svmaxuw, Hex_min,    Hex_minu,
             };
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_reg( ops, REG_R(t5), REG_DOUBLE );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_reg( ops[2], REG_R(t5), REG_DOUBLE );
             return itypes[ (BIT(21) << 3) | BITS(7:5) ];
         }
         if( BITS(23:21) == 0b111 && BIT(7) == 0 )
         {
             // Rdd32 = {and|or}{(Rss32,Rtt32)|(Rtt32,~Rss32)}
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
             if( BIT(5) ) {
-                add_reg( ops, REG_R(t5), REG_DOUBLE );
-                add_reg( ops, REG_R(s5), REG_DOUBLE | REG_PRE_NEG );
+                op_reg( ops[1], REG_R(t5), REG_DOUBLE );
+                op_reg( ops[2], REG_R(s5), REG_DOUBLE | REG_PRE_NEG );
             } else {
-                add_reg( ops, REG_R(s5), REG_DOUBLE );
-                add_reg( ops, REG_R(t5), REG_DOUBLE );
+                op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+                op_reg( ops[2], REG_R(t5), REG_DOUBLE );
             }
             return BIT(6)? Hex_or : Hex_and;
         }
         if( BITS(23:21) == 0b111 && BITS(7:5) == 0b111 )
         {
             // Rd32 = modwrap(Rs32,Rt32)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_reg( ops, REG_R(t5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_reg( ops[2], REG_R(t5) );
             return Hex_modwrap;
         }
         // all other code 3 instructions:
@@ -2012,18 +1997,18 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
         case 0b111100: code = Hex_xor; break;
         default: return 0;
         }
-        add_reg( ops, REG_R(d5), REG_DOUBLE );
-        add_reg( ops, REG_R(s5), REG_DOUBLE );
-        add_reg( ops, REG_R(t5), REG_DOUBLE );
+        op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+        op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+        op_reg( ops[2], REG_R(t5), REG_DOUBLE );
         return code;
 
     case 0b0100:
         if( BITS(23:22) == 0 && BIT(13) == 0 && BITS(7:5) == 0 )
         {
             // Rdd32 = bitsplit(Rs32,Rt32) or packhl(Rs32,Rt32):deprecated
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_reg( ops, REG_R(s5) );
-            add_reg( ops, REG_R(t5) );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_reg( ops[1], REG_R(s5) );
+            op_reg( ops[2], REG_R(t5) );
             return BIT(21)? Hex_bitsplit : Hex_packhl;
         }
         break;
@@ -2033,13 +2018,13 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
         if( BITS(23:22) == 0b00 && BIT(5) == 0 )
         {
             // Rd32 = add(Rt32.l,Rs32.{l|h})[:sat]
-            add_reg( ops, REG_R(d5) );
+            op_reg( ops[0], REG_R(d5) );
             if( BIT(21) ) {
-                add_reg( ops, REG_R(s5), BIT(6)? REG_POST_HI : REG_POST_LO );
-                add_reg( ops, REG_R(t5), REG_POST_LO );
+                op_reg( ops[1], REG_R(s5), BIT(6)? REG_POST_HI : REG_POST_LO );
+                op_reg( ops[2], REG_R(t5), REG_POST_LO );
             } else {
-                add_reg( ops, REG_R(t5), REG_POST_LO );
-                add_reg( ops, REG_R(s5), BIT(6)? REG_POST_HI : REG_POST_LO );
+                op_reg( ops[1], REG_R(t5), REG_POST_LO );
+                op_reg( ops[2], REG_R(s5), BIT(6)? REG_POST_HI : REG_POST_LO );
             }
             flags = BIT(7)? IPO_SAT : 0;
             return BIT(21)? Hex_sub : Hex_add;
@@ -2047,13 +2032,13 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
         if( BITS(23:22) == 0b01 )
         {
             // Rd32 = {add|sub}(Rt32.[l|h],Rs32.[l|h})[:sat]:<<16
-            add_reg( ops, REG_R(d5) );
+            op_reg( ops[0], REG_R(d5) );
             if( BIT(21) ) {
-                add_reg( ops, REG_R(s5), BIT(5)? REG_POST_HI : REG_POST_LO );
-                add_reg( ops, REG_R(t5), BIT(6)? REG_POST_HI : REG_POST_LO );
+                op_reg( ops[1], REG_R(s5), BIT(5)? REG_POST_HI : REG_POST_LO );
+                op_reg( ops[2], REG_R(t5), BIT(6)? REG_POST_HI : REG_POST_LO );
             } else {
-                add_reg( ops, REG_R(t5), BIT(6)? REG_POST_HI : REG_POST_LO );
-                add_reg( ops, REG_R(s5), BIT(5)? REG_POST_HI : REG_POST_LO );
+                op_reg( ops[1], REG_R(t5), BIT(6)? REG_POST_HI : REG_POST_LO );
+                op_reg( ops[2], REG_R(s5), BIT(5)? REG_POST_HI : REG_POST_LO );
             }
             flags = BIT(7)? IPO_SAT_LS16 : IPO_LS16;
             return BIT(21)? Hex_sub : Hex_add;
@@ -2062,9 +2047,9 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
         {
             // WARNING: DEPRECATED instruction
             // Rd32 = {add|sub}(Rs32,Rt32):sat:deprecated
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_reg( ops, REG_R(t5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_reg( ops[2], REG_R(t5) );
             flags = IPO_SAT;
             return BIT(7)? Hex_sub : Hex_add;
         }
@@ -2072,17 +2057,17 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
         {
             // Rd32 = {max|min}[u](Rs32,Rt32)
             static const uint8_t itypes[4] = { Hex_max, Hex_min, Hex_maxu, Hex_minu };
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_reg( ops, REG_R(t5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_reg( ops[2], REG_R(t5) );
             return itypes[ (BIT(7) << 1) | BIT(21) ];
         }
         if( BITS(23:21) == 0b111 && BITS(7:5) == 0 )
         {
             // Rd32 = parity(Rs32,Rt32)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_reg( ops, REG_R(t5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_reg( ops[2], REG_R(t5) );
             return Hex_parity;
         }
         break;
@@ -2093,8 +2078,8 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
         {
             // Rd[d]32 = {s|d}fmake(#Ii)[:pos|:neg]
             bool dbl = BITS(27:23) == 0b10010;
-            add_reg( ops, REG_R(d5), dbl? REG_DOUBLE : 0 );
-            add_imm( ops, (BIT(21) << 9 ) | BITS(13:5) );
+            op_reg( ops[0], REG_R(d5), dbl? REG_DOUBLE : 0 );
+            op_imm( ops[1], (BIT(21) << 9 ) | BITS(13:5) );
             flags = BIT(22)? IPO_NEG : IPO_POS;
             return dbl? Hex_dfmake : Hex_sfmake;
         }
@@ -2104,20 +2089,20 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
         if( BIT(23) == 0 )
         {
             // Rd32 = add(#Ii,mpyi(Rs32,Rt32))
-            add_reg( ops, REG_R(d5) );
-            add_imm( ops, EXTEND( (BITS(22:21) << 4) | (BIT(13) << 3) | BITS(7:5), 0 ), false, extended );
-            add_reg( ops, REG_R(s5) );
-            add_reg( ops, REG_R(t5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_imm( ops[1], EXTEND( (BITS(22:21) << 4) | (BIT(13) << 3) | BITS(7:5), 0 ), false, extended );
+            op_reg( ops[2], REG_R(s5) );
+            op_reg( ops[3], REG_R(t5) );
             return Hex_add_mpyi;
         }
         break;
 
     case 0b1000: {
             // Rd32 = add(#Ii,mpyi(Rs32,#II))
-            add_reg( ops, REG_R(t5) );
-            add_imm( ops, EXTEND( (BITS(22:21) << 4) | (BIT(13) << 3) | BITS(7:5), 0 ), false, extended );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, (BIT(23) << 5) | BITS(4:0) );
+            op_reg( ops[0], REG_R(t5) );
+            op_imm( ops[1], EXTEND( (BITS(22:21) << 4) | (BIT(13) << 3) | BITS(7:5), 0 ), false, extended );
+            op_reg( ops[2], REG_R(s5) );
+            op_imm( ops[3], (BIT(23) << 5) | BITS(4:0) );
             return Hex_add_mpyi;
         }
 
@@ -2125,29 +2110,29 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
         if( BIT(22) == 0 )
         {
             // Rx32 |= {and|or}(Rs32,#Ii)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, EXTEND( (SBIT(21) << 9) | BITS(13:5), 0 ), true, extended );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_imm( ops[2], EXTEND( (SBIT(21) << 9) | BITS(13:5), 0 ), true, extended );
             flags = IAT_OR;
             return BIT(23)? Hex_or : Hex_and;
         }
         if( BITS(23:22) == 0b01 )
         {
             // Rx32 = or(Ru32,and(Rx32in,#Ii))
-            add_reg( ops, REG_R(s5) );
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, EXTEND( (SBIT(21) << 9) | BITS(13:5), 0 ), true, extended );
+            op_reg( ops[0], REG_R(s5) );
+            op_reg( ops[1], REG_R(d5) );
+            op_reg( ops[2], REG_R(s5) );
+            op_imm( ops[3], EXTEND( (SBIT(21) << 9) | BITS(13:5), 0 ), true, extended );
             return Hex_or_and;
         }
         break;
 
     case 0b1011: {
             // Rd32 = add(Rs32,{add(Ru32,#Ii)|sub(#Ii,Ru32)})
-            add_reg( ops, REG_R(t5) );
-            add_reg( ops, REG_R(s5) );
-            add_reg( ops, REG_R(d5) );
-            add_imm( ops, EXTEND( (SBITS(22:21) << 4) | (BIT(13) << 3) | BITS(7:5), 0 ), true, extended );
+            op_reg( ops[0], REG_R(t5) );
+            op_reg( ops[1], REG_R(s5) );
+            op_reg( ops[2], REG_R(d5) );
+            op_imm( ops[3], EXTEND( (SBITS(22:21) << 4) | (BIT(13) << 3) | BITS(7:5), 0 ), true, extended );
             return BIT(23)? Hex_add_sub : Hex_add_add;
         }
 
@@ -2156,9 +2141,9 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
             BITS(4:3) <= 2 && BIT(2) == 0 && !(BIT(22) & BIT(12)) )
         {
             // Pd4 = vcmp%s%c(Rss32,#Ii)
-            add_reg( ops, REG_P(BITS(1:0)) );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_imm( ops, SBITS(12:5), true );
+            op_reg( ops[0], REG_P(BITS(1:0)) );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_imm( ops[2], SBITS(12:5), true );
             flags = (BITS(23:21) << CMP_SHIFT) |  // CMP_EQ/CMP_GT/CMP_GTU
                     (BIT(4)? SZ_W : BIT(3)? SZ_H : SZ_B);
             return Hex_svcmp;
@@ -2166,9 +2151,9 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
         if( BITS(23:21) == 0b100 && BITS(13:10) == 0 && BITS(4:2) == 0b100 )
         {
             // Pd4 = dfclass(Rss32,#Ii)
-            add_reg( ops, REG_P(BITS(1:0)) );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_imm( ops, BITS(9:5) );
+            op_reg( ops[0], REG_P(BITS(1:0)) );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_imm( ops[2], BITS(9:5) );
             return Hex_dfclass;
         }
         break;
@@ -2178,9 +2163,9 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
             BIT(4) == 0 && BIT(2) == 0 && !(BIT(22) & BIT(12)) )
         {
             // Pd4 = cmp%s%c(Rs32,#Ii)
-            add_reg( ops, REG_P(BITS(1:0)) );
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, EXTEND(SBITS(12:5), 0), true, extended );
+            op_reg( ops[0], REG_P(BITS(1:0)) );
+            op_reg( ops[1], REG_R(s5) );
+            op_imm( ops[2], EXTEND(SBITS(12:5), 0), true, extended );
             flags = (BITS(23:21) << CMP_SHIFT) |  // CMP_EQ/CMP_GT/CMP_GTU
                     (BIT(3)? SZ_H : SZ_B);
             return Hex_cmp;
@@ -2195,23 +2180,23 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
                 Hex_and_asl, Hex_or_asl, Hex_add_asl, Hex_sub_asl,
                 Hex_and_lsr, Hex_or_lsr, Hex_add_lsr, Hex_sub_lsr
             };
-            add_reg( ops, REG_R(s5) );
-            add_imm( ops, EXTEND( (BITS(23:21) << 5)| (BIT(13) << 4) | (BITS(7:5) << 1) | BIT(3), 0 ), false, extended );
-            add_imm( ops, BITS(12:8) );
+            op_reg( ops[0], REG_R(s5) );
+            op_imm( ops[1], EXTEND( (BITS(23:21) << 5)| (BIT(13) << 4) | (BITS(7:5) << 1) | BIT(3), 0 ), false, extended );
+            op_imm( ops[2], BITS(12:8) );
             return itypes[ (BIT(4) << 2) | BITS(2:1) ];
         }
         break;
 
     case 0b1111: {
             // Rd32 = add(Ru32,mpyi(#Ii,Rs32)) or add(Ru32,mpyi(Rs32,#Ii))
-            add_reg( ops, REG_R(t5) );
-            add_reg( ops, REG_R(d5) );
+            op_reg( ops[0], REG_R(t5) );
+            op_reg( ops[1], REG_R(d5) );
             if( BIT(23) ) {
-                add_reg( ops, REG_R(s5) );
-                add_imm( ops, EXTEND( (BITS(22:21) << 4) | (BIT(13) << 3) | BITS(7:5), 0 ), false, extended );
+                op_reg( ops[2], REG_R(s5) );
+                op_imm( ops[3], EXTEND( (BITS(22:21) << 4) | (BIT(13) << 3) | BITS(7:5), 0 ), false, extended );
             } else {
-                add_imm( ops, (BITS(22:21) << 6) | (BIT(13) << 5) | (BITS(7:5) << 2) );
-                add_reg( ops, REG_R(s5) );
+                op_imm( ops[2], (BITS(22:21) << 6) | (BIT(13) << 5) | (BITS(7:5) << 2) );
+                op_reg( ops[3], REG_R(s5) );
             }
             return Hex_add_mpyi;
         }
@@ -2220,7 +2205,7 @@ static uint32_t iclass_13_ALU64( uint32_t word, uint64_t extender, op_t **ops, u
     return 0;
 }
 
-static uint32_t iclass_14_M( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+static uint32_t iclass_14_M( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     if( BIT(13) != 0 ) return 0;
 
@@ -2235,9 +2220,9 @@ static uint32_t iclass_14_M( uint32_t word, uint64_t extender, op_t **ops, uint3
             IPO_NONE, IPO_SAT,     IPO_RND,     IPO_RND_SAT,
             IPO_LS1,  IPO_LS1_SAT, IPO_LS1_RND, IPO_LS1_RND_SAT,
         };
-        add_reg( ops, rd, BIT(27)? 0 : REG_DOUBLE );
-        add_reg( ops, rs, BIT(6)? REG_POST_HI : REG_POST_LO );
-        add_reg( ops, rt, BIT(5)? REG_POST_HI : REG_POST_LO );
+        op_reg( ops[0], rd, BIT(27)? 0 : REG_DOUBLE );
+        op_reg( ops[1], rs, BIT(6)? REG_POST_HI : REG_POST_LO );
+        op_reg( ops[2], rt, BIT(5)? REG_POST_HI : REG_POST_LO );
         flags = post[ (BIT(23) << 2) | (BIT(21) << 1) | BIT(7) ];
         return Hex_mpy;
     }
@@ -2245,9 +2230,9 @@ static uint32_t iclass_14_M( uint32_t word, uint64_t extender, op_t **ops, uint3
     {
         // Rx[x]32 ±= mpy(Rs32.{l|h},Rt32.{l|h})[:<<1][:sat]
         static const uint16_t post[4] = { IPO_NONE, IPO_SAT, IPO_LS1, IPO_LS1_SAT };
-        add_reg( ops, rd, BIT(27)? 0 : REG_DOUBLE );
-        add_reg( ops, rs, BIT(6)? REG_POST_HI : REG_POST_LO );
-        add_reg( ops, rt, BIT(5)? REG_POST_HI : REG_POST_LO );
+        op_reg( ops[0], rd, BIT(27)? 0 : REG_DOUBLE );
+        op_reg( ops[1], rs, BIT(6)? REG_POST_HI : REG_POST_LO );
+        op_reg( ops[2], rt, BIT(5)? REG_POST_HI : REG_POST_LO );
         flags = post[ (BIT(23) << 1) | BIT(7) ] |
                 (BIT(21)? IAT_SUB : IAT_ADD);
         return Hex_mpy;
@@ -2255,9 +2240,9 @@ static uint32_t iclass_14_M( uint32_t word, uint64_t extender, op_t **ops, uint3
     if( (BITS(27:21) & 0b0101010) == 0b0100010 && BIT(7) == 0 && (BIT(25) || !BIT(21)) )
     {
         // Rx[x]32 [±]= mpyu(Rs32.{l|h},Rt32.{l|h})[:<<1]
-        add_reg( ops, rd, BIT(27)? 0 : REG_DOUBLE );
-        add_reg( ops, rs, BIT(6)? REG_POST_HI : REG_POST_LO );
-        add_reg( ops, rt, BIT(5)? REG_POST_HI : REG_POST_LO );
+        op_reg( ops[0], rd, BIT(27)? 0 : REG_DOUBLE );
+        op_reg( ops[1], rs, BIT(6)? REG_POST_HI : REG_POST_LO );
+        op_reg( ops[2], rt, BIT(5)? REG_POST_HI : REG_POST_LO );
         flags = (BIT(23)? IPO_LS1 : 0);
         if( BIT(25) ) flags |= (BIT(21)? IAT_SUB : IAT_ADD);
         return Hex_mpyu;
@@ -2266,18 +2251,18 @@ static uint32_t iclass_14_M( uint32_t word, uint64_t extender, op_t **ops, uint3
     if( (BITS(27:21) & 0b1101101) == 0b1000101 && BITS(7:5) == 0b100 )
     {
         // Rxx32 [+]= vrcmpys(Rss32,Rt32):<<1:sat
-        add_reg( ops, rd, REG_DOUBLE );
-        add_reg( ops, rs, REG_DOUBLE );
-        add_reg( ops, rt + !BIT(22) ); // mapped from raw
+        op_reg( ops[0], rd, REG_DOUBLE );
+        op_reg( ops[1], rs, REG_DOUBLE );
+        op_reg( ops[2], rt + !BIT(22) ); // mapped from raw
         flags = IPO_LS1_SAT | (BIT(25)? IAT_ADD : 0);
         return Hex_svrcmpys;
     }
     if( BITS(27:21) == 0b1001101 && BITS(7:6) == 0b11 )
     {
         // Rd32 = vrcmpys(Rss32,Rt32):<<1:rnd:sat
-        add_reg( ops, rd );
-        add_reg( ops, rs, REG_DOUBLE );
-        add_reg( ops, rt + !BIT(5) ); // mapped from raw
+        op_reg( ops[0], rd );
+        op_reg( ops[1], rs, REG_DOUBLE );
+        op_reg( ops[2], rt + !BIT(5) ); // mapped from raw
         flags = IPO_LS1_RND_SAT;
         return Hex_svrcmpys;
     }
@@ -2285,67 +2270,67 @@ static uint32_t iclass_14_M( uint32_t word, uint64_t extender, op_t **ops, uint3
     {
         // Rx32 [±]= mpyi(Rs32,#Ii)
         uint32_t imm = BITS(12:5);
-        add_reg( ops, rd );
-        add_reg( ops, rs );
+        op_reg( ops[0], rd );
+        op_reg( ops[1], rs );
         if( BITS(24:23) == 0b01 )
-            add_imm( ops, -(int32_t)imm, true ); // mapped from -mpyi
+            op_imm( ops[2], -(int32_t)imm, true ); // mapped from -mpyi
         else
-            add_imm( ops, EXTEND(imm, 0), false, extended );
+            op_imm( ops[2], EXTEND(imm, 0), false, extended );
         if( BIT(24) ) flags = BIT(23)? IAT_SUB : IAT_ADD;
         return Hex_mpyi;
     }
     if( (BITS(27:21) & 0b1111011) == 0b0010000 )
     {
         // Rx32 ±= add(Rs32,#Ii)
-        add_reg( ops, rd );
-        add_reg( ops, rs );
-        add_imm( ops, EXTEND(SBITS(12:5), 0), true, extended );
+        op_reg( ops[0], rd );
+        op_reg( ops[1], rs );
+        op_imm( ops[2], EXTEND(SBITS(12:5), 0), true, extended );
         flags = BIT(23)? IAT_SUB : IAT_ADD;
         return Hex_add;
     }
     if( BITS(27:21) == 0b0011000 && BITS(7:5) == 0 )
     {
         // Ry32 = add(Ru32,mpyi(Ry32in,Rs32))
-        add_reg( ops, rt );
-        add_reg( ops, rd );
-        add_reg( ops, rt );
-        add_reg( ops, rs );
+        op_reg( ops[0], rt );
+        op_reg( ops[1], rd );
+        op_reg( ops[2], rt );
+        op_reg( ops[3], rs );
         return Hex_add_mpyi;
     }
     if( BITS(27:21) == 0b1010101 && BIT(7) == 0 )
     {
         // Rxx32,Pe4 = vacsh(Rss32,Rtt32)
-        add_reg( ops, rd, REG_DOUBLE );
-        add_reg( ops, REG_P(BITS(6:5)) );
-        add_reg( ops, rs, REG_DOUBLE );
-        add_reg( ops, rt, REG_DOUBLE );
+        op_reg( ops[0], rd, REG_DOUBLE );
+        op_reg( ops[1], REG_P(BITS(6:5)) );
+        op_reg( ops[2], rs, REG_DOUBLE );
+        op_reg( ops[3], rt, REG_DOUBLE );
         return Hex_svacsh;
     }
     if( BITS(27:21) == 0b1010111 && BIT(7) == 0 )
     {
         // Rdd32,Pe4 = vminub(Rtt32,Rss32)
-        add_reg( ops, rd, REG_DOUBLE );
-        add_reg( ops, REG_P(BITS(6:5)) );
-        add_reg( ops, rs, REG_DOUBLE );
-        add_reg( ops, rt, REG_DOUBLE );
+        op_reg( ops[0], rd, REG_DOUBLE );
+        op_reg( ops[1], REG_P(BITS(6:5)) );
+        op_reg( ops[2], rs, REG_DOUBLE );
+        op_reg( ops[3], rt, REG_DOUBLE );
         return Hex_svminub2d;
     }
     if( BITS(27:21) == 0b1011111 && BIT(7) == 1 )
     {
         // Rd32,Pe4 = sfrecipa(Rs32,Rt32)
-        add_reg( ops, rd );
-        add_reg( ops, REG_P(BITS(6:5)) );
-        add_reg( ops, rs );
-        add_reg( ops, rt );
+        op_reg( ops[0], rd );
+        op_reg( ops[1], REG_P(BITS(6:5)) );
+        op_reg( ops[2], rs );
+        op_reg( ops[3], rt );
         return Hex_sfrecipa;
     }
     if( BITS(27:21) == 0b1111011 && BIT(7) == 1 )
     {
         // Rx32 += sfmpy(Rs32,Rt32,Pu4):scale
-        add_reg( ops, rd );
-        add_reg( ops, rs );
-        add_reg( ops, rt );
-        add_reg( ops, REG_P(BITS(6:5)) );
+        op_reg( ops[0], rd );
+        op_reg( ops[1], rs );
+        op_reg( ops[2], rt );
+        op_reg( ops[3], REG_P(BITS(6:5)) );
         flags = IAT_ADD | IPO_SCALE;
         return Hex_sfmpy3;
     }
@@ -2553,13 +2538,13 @@ static uint32_t iclass_14_M( uint32_t word, uint64_t extender, op_t **ops, uint3
 
     default: return 0;
     }
-    add_reg( ops, rd, FLG_D(dreg) );
-    add_reg( ops, rs, FLG_S(dreg) );
-    add_reg( ops, rt, FLG_T(dreg) | tf );
+    op_reg( ops[0], rd, FLG_D(dreg) );
+    op_reg( ops[1], rs, FLG_S(dreg) );
+    op_reg( ops[2], rt, FLG_T(dreg) | tf );
     return code;
 }
 
-static uint32_t iclass_15_ALU3op( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+static uint32_t iclass_15_ALU3op( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
     uint32_t code = BITS(27:21);
@@ -2568,10 +2553,10 @@ static uint32_t iclass_15_ALU3op( uint32_t word, uint64_t /*extender*/, op_t **o
     {
         // Rd32 = <logic>(Rt32,[~]Rs32)
         static const uint8_t itypes[8] = { Hex_and, Hex_or, 0, Hex_xor, Hex_and, Hex_or };
-        add_reg( ops, REG_R(d5) );
+        op_reg( ops[0], REG_R(d5) );
         if( BIT(23) ) SWAP( s5, t5 );
-        add_reg( ops, REG_R(s5) );
-        add_reg( ops, REG_R(t5), BIT(23)? REG_PRE_NEG : 0 );
+        op_reg( ops[1], REG_R(s5) );
+        op_reg( ops[2], REG_R(t5), BIT(23)? REG_PRE_NEG : 0 );
         return itypes[ BITS(23:21) ];
     }
 
@@ -2580,26 +2565,26 @@ static uint32_t iclass_15_ALU3op( uint32_t word, uint64_t /*extender*/, op_t **o
         // Pd4 = [!]cmp%c(Rs32,Rt32)
         static const uint32_t cmp[4] = { CMP_EQ, 0, CMP_GT, CMP_GTU };
         flags = cmp[BITS(22:21)] | (BIT(4)? IAT_NOT : 0);
-        add_reg( ops, REG_P(BITS(1:0)) );
-        add_reg( ops, REG_R(s5) );
-        add_reg( ops, REG_R(t5) );
+        op_reg( ops[0], REG_P(BITS(1:0)) );
+        op_reg( ops[1], REG_R(s5) );
+        op_reg( ops[2], REG_R(t5) );
         return Hex_cmp;
     }
     if( BITS(27:23) == 0b00111 && BIT(13) == 0 && BITS(7:5) == 0 )
     {
         // Rd32 = combine(Rt32.{l|h},Rs32.{l|h})
-        add_reg( ops, REG_R(d5) );
-        add_reg( ops, REG_R(t5), BIT(22)? REG_POST_LO : REG_POST_HI );
-        add_reg( ops, REG_R(s5), BIT(21)? REG_POST_LO : REG_POST_HI );
+        op_reg( ops[0], REG_R(d5) );
+        op_reg( ops[1], REG_R(t5), BIT(22)? REG_POST_LO : REG_POST_HI );
+        op_reg( ops[2], REG_R(s5), BIT(21)? REG_POST_LO : REG_POST_HI );
         return Hex_combine;
     }
     if( BITS(27:21) == 0b0100000 && BIT(13) == 0 && BIT(7) == 0 )
     {
         // Rd32 = mux(Pu4,Rs32,Rt32)
-        add_reg( ops, REG_R(d5) );
-        add_reg( ops, REG_P(BITS(6:5)) );
-        add_reg( ops, REG_R(s5) );
-        add_reg( ops, REG_R(t5) );
+        op_reg( ops[0], REG_R(d5) );
+        op_reg( ops[1], REG_P(BITS(6:5)) );
+        op_reg( ops[2], REG_R(s5) );
+        op_reg( ops[3], REG_R(t5) );
         return Hex_mux;
     }
     while( BIT(27) == 1 && BITS(24:23) == 0b10 )
@@ -2608,12 +2593,12 @@ static uint32_t iclass_15_ALU3op( uint32_t word, uint64_t /*extender*/, op_t **o
         static const uint8_t itypes[16] = { Hex_and, Hex_or, 0, Hex_xor, Hex_add, Hex_sub, 0, 0, Hex_combine };
         uint32_t itype = itypes[ (BITS(26:25) << 2) | BITS(22:21) ];
         if( itype == 0 ) break;
-        add_reg( ops, REG_P(BITS(6:5)),
-                 (BIT(7)? REG_PRE_NOT : 0) |
-                 (BIT(13)? REG_POST_NEW : 0) );
-        add_reg( ops, REG_R(d5), itype == Hex_combine? REG_DOUBLE : 0 );
-        add_reg( ops, REG_R(s5) );
-        add_reg( ops, REG_R(t5) );
+        op_reg( ops[PRED_A], REG_P(BITS(6:5)),
+                (BIT(7)? REG_PRE_NOT : 0) |
+                (BIT(13)? REG_POST_NEW : 0) );
+        op_reg( ops[0], REG_R(d5), itype == Hex_combine? REG_DOUBLE : 0 );
+        op_reg( ops[1], REG_R(s5) );
+        op_reg( ops[2], REG_R(t5) );
         flags = PRED_REG;
         return itype;
     }
@@ -2641,9 +2626,9 @@ static uint32_t iclass_15_ALU3op( uint32_t word, uint64_t /*extender*/, op_t **o
         case 59: code = Hex_svnavg;  flags = SZ_H; break;
         default: return 0;
         }
-        add_reg( ops, REG_R(d5), code == Hex_combine || code == Hex_packhl? REG_DOUBLE : 0 );
-        add_reg( ops, REG_R(s5) );
-        add_reg( ops, REG_R(t5) );
+        op_reg( ops[0], REG_R(d5), code == Hex_combine || code == Hex_packhl? REG_DOUBLE : 0 );
+        op_reg( ops[1], REG_R(s5) );
+        op_reg( ops[2], REG_R(t5) );
         return code;
     }
     return 0;
@@ -2653,7 +2638,7 @@ static uint32_t iclass_15_ALU3op( uint32_t word, uint64_t /*extender*/, op_t **o
 // system instructions parsing
 //
 
-static uint32_t iclass_5_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
+static uint32_t iclass_5_SYS( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &/*flags*/ )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
 
@@ -2662,30 +2647,35 @@ static uint32_t iclass_5_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         // {trap0|trap1|pause}(#Ii)
         const uint8_t itypes[4] = { Hex_trap0, Hex_pause, Hex_trap1_2, 0 };
         uint32_t code = BITS(23:22), imm = (BITS(12:8) << 3) | BITS(4:2);
-        if( code == 2 ) add_reg( ops, REG_R(s5) );
-        else if( s5 ) return 0;
-        add_imm( ops, imm );
+        if( code == 2 ) {
+            op_reg( ops[0], REG_R(s5) );
+            op_imm( ops[1], imm );
+        }
+        else {
+            if( s5 ) return 0;
+            op_imm( ops[0], imm );
+        }
         return itypes[ code ];
     }
     if( BITS(27:23) == 0b01011 && BIT(21) == 1 && BITS(13:5) == 0 )
     {
         // Rd=ic{data|tag}r(Rs)
-        add_reg( ops, REG_R(d5) );
-        add_reg( ops, REG_R(s5) );
+        op_reg( ops[0], REG_R(d5) );
+        op_reg( ops[1], REG_R(s5) );
         return BIT(22)? Hex_ictagr : Hex_icdatar;
     }
     if( BITS(27:21) == 0b0101110 && BITS(7:5) == 0 )
     {
         // ic{data|tag}w(Rs,Rt)
-        add_reg( ops, REG_R(s5) );
-        add_reg( ops, REG_R(t5) );
+        op_reg( ops[0], REG_R(s5) );
+        op_reg( ops[1], REG_R(t5) );
         return BIT(13)? Hex_icdataw : Hex_ictagw;
     }
     if( BITS(27:21) == 0b0110110 && BIT(13) == 0 && BITS(10:0) == 0 )
     {
         // icinv{a|idx}(Rs32), ickill
         const uint8_t itypes[4] = { Hex_icinva, Hex_icinvidx, Hex_ickill, 0 };
-        if( !BIT(12) ) add_reg( ops, REG_R(s5) );
+        if( !BIT(12) ) op_reg( ops[0], REG_R(s5) );
         else if( s5 ) return 0;
         return itypes[ BITS(12:11) ];
     }
@@ -2702,7 +2692,7 @@ static uint32_t iclass_5_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, 
     return 0;
 }
 
-static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
+static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &/*flags*/ )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
 
@@ -2713,33 +2703,33 @@ static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         {
             // swi/cswi/iassignw/ciad(Rs)
             static const uint8_t itypes[] = { Hex_swi, Hex_cswi, Hex_iassignw, Hex_ciad };
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(s5) );
             return itypes[ BITS(13:5) ];
         }
         if( BITS(23:21) == 0b010 && BITS(13:5) <= 1 && d5 == 0 )
         {
             // wait/resume(Rs32)
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(s5) );
             return BIT(5)? Hex_resume : Hex_wait;
         }
         if( BITS(23:21) == 0b011 && BITS(13:5) <= 2 && d5 == 0 )
         {
             // stop/start/nmi(Rs)
             static const uint8_t itypes[] = { Hex_stop, Hex_start, Hex_nmi };
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(s5) );
             return itypes[ BITS(13:5) ];
         }
         if( BITS(23:21) == 0b100 && BITS(13:10) == 0 && BITS(8:5) <= 1 && d5 == 0 )
         {
             // set{prio|imask}(Pt,Rs)
-            add_reg( ops, REG_P(BITS(9:8)) );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_P(BITS(9:8)) );
+            op_reg( ops[1], REG_R(s5) );
             return BIT(5)? Hex_setprio : Hex_setimask;
         }
         if( BITS(23:21) == 0b100 && BITS(13:0) == 0b00000001100000 )
         {
             // siad(Rs)
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(s5) );
             return Hex_siad;
         }
         break;
@@ -2748,8 +2738,8 @@ static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         if( BITS(23:22) == 0 && BITS(13:0) == 0 )
         {
             // crswap(Rx,sgp{0|1})
-            add_reg( ops, REG_R(s5) );
-            add_reg( ops, REG_S(BIT(21)) );
+            op_reg( ops[0], REG_R(s5) );
+            op_reg( ops[1], REG_S(BIT(21)) );
             return Hex_crswap;
         }
         break;
@@ -2758,15 +2748,15 @@ static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         if( BITS(23:21) == 0b000 && BITS(13:5) == 0 )
         {
             // Rd=getimask(Rs)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
             return Hex_getimask;
         }
         if( BITS(23:21) == 0b011 && BITS(13:5) == 0 )
         {
             // Rd=iassignr(Rs)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
             return Hex_iassignr;
         }
         break;
@@ -2775,8 +2765,8 @@ static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         if( BITS(23:21) == 0 && BITS(13:7) == 0 )
         {
             // Sd=Rs
-            add_reg( ops, REG_S(BITS(6:0)) );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_S(BITS(6:0)) );
+            op_reg( ops[1], REG_R(s5) );
             return Hex_mov;
         }
         break;
@@ -2785,8 +2775,8 @@ static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         if( BITS(23:21) == 0b000 && BIT(13) == 0 && BITS(7:0) == 0 )
         {
             // tlbw(Rss,Rt)
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_reg( ops, REG_R(t5) );
+            op_reg( ops[0], REG_R(s5), REG_DOUBLE );
+            op_reg( ops[1], REG_R(t5) );
             return Hex_tlbw;
         }
         if( BITS(23:16) == 0b00100000 && BITS(13:5) <= 4 && d5 == 0 )
@@ -2798,36 +2788,36 @@ static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         if( BITS(23:21) == 0b010 && BITS(13:5) == 0 )
         {
             // Rdd=tlbr(Rs)
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_reg( ops[1], REG_R(s5) );
             return Hex_tlbr;
         }
         if( BITS(23:21) == 0b100 && BITS(13:5) == 0 )
         {
             // Rd=tlbp(Rs)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
             return Hex_tlbp;
         }
         if( BITS(23:21) == 0b101 && BITS(13:0) == 0 )
         {
             // tlbinvasid(Rs)
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(s5) );
             return Hex_tlbinvasid;
         }
         if( BITS(23:21) == 0b110 && BIT(13) == 0 && BITS(7:5) == 0 )
         {
             // Rd=ctlbw(Rss,Rt)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_reg( ops, REG_R(t5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
+            op_reg( ops[2], REG_R(t5) );
             return Hex_ctlbw;
         }
         if( BITS(23:21) == 0b111 && BITS(13:5) == 0 )
         {
             // Rd=tlboc(Rss)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
             return Hex_tlboc;
         }
         break;
@@ -2836,15 +2826,15 @@ static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         if( BITS(23:21) == 0b000 && BITS(13:7) == 0 )
         {
             // Sdd=Rss
-            add_reg( ops, REG_S(BITS(6:0)), REG_DOUBLE );
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
+            op_reg( ops[0], REG_S(BITS(6:0)), REG_DOUBLE );
+            op_reg( ops[1], REG_R(s5), REG_DOUBLE );
             return Hex_mov;
         }
         if( BITS(23:21) == 0b100 && BITS(13:0) == 0 )
         {
             // crswap(Rxx,sgp1:0);
-            add_reg( ops, REG_R(s5), REG_DOUBLE );
-            add_reg( ops, REG_S0, REG_DOUBLE );
+            op_reg( ops[0], REG_R(s5), REG_DOUBLE );
+            op_reg( ops[1], REG_S0, REG_DOUBLE );
             return Hex_crswap;
         }
         break;
@@ -2853,8 +2843,8 @@ static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         if( BIT(23) == 1 && BITS(13:5) == 0 )
         {
             // Rd=Ss
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_S(BITS(22:16)) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_S(BITS(22:16)) );
             return Hex_mov;
         }
         break;
@@ -2863,8 +2853,8 @@ static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         if( BIT(23) == 0 && BITS(13:5) == 0 )
         {
             // Rdd=Sss
-            add_reg( ops, REG_R(d5), REG_DOUBLE );
-            add_reg( ops, REG_S(BITS(22:16)), REG_DOUBLE );
+            op_reg( ops[0], REG_R(d5), REG_DOUBLE );
+            op_reg( ops[1], REG_S(BITS(22:16)), REG_DOUBLE );
             return Hex_mov;
         }
         break;
@@ -2872,7 +2862,7 @@ static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, 
     return 0;
 }
 
-static uint32_t iclass_10_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
+static uint32_t iclass_10_SYS( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &/*flags*/ )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
 
@@ -2883,14 +2873,14 @@ static uint32_t iclass_10_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops,
         {
             // dc{clean|inv|cleaninv|zero}a(Rs32)
             static const uint8_t itypes[8] = { Hex_dccleana, Hex_dcinva, Hex_dccleaninva, 0, 0, 0, Hex_dczeroa, };
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(s5) );
             return itypes[ BITS(23:21) ];
         }
         if( BITS(23:21) == 0b111 && BITS(13:2) == 0b100000000000 )
         {
             // Pd=l2locka(Rs)
-            add_reg( ops, REG_P(BITS(1:0)) );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_P(BITS(1:0)) );
+            op_reg( ops[1], REG_R(s5) );
             return Hex_l2locka;
         }
         break;
@@ -2905,7 +2895,7 @@ static uint32_t iclass_10_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops,
         {
             // dc[clean][inv]idx(Rs)
             static const uint8_t itypes[4] = { 0 /*dckill*/, Hex_dccleanidx, Hex_dcinvidx, Hex_dccleaninvidx };
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(s5) );
             return itypes[ BITS(22:21) ];
         }
         break;
@@ -2914,15 +2904,15 @@ static uint32_t iclass_10_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops,
         if( BIT(23) == 0 && BIT(21) == 0 && BIT(13) == 0 && BITS(7:0) == 0 )
         {
             // {l2|dc}tagw(Rs,Rt)
-            add_reg( ops, REG_R(s5) );
-            add_reg( ops, REG_R(t5) );
+            op_reg( ops[0], REG_R(s5) );
+            op_reg( ops[1], REG_R(t5) );
             return BIT(22)? Hex_l2tagw : Hex_dctagw;
         }
         if( BIT(23) == 0 && BIT(21) == 1 && BITS(13:5) == 0 )
         {
             // Rd={l2|dc}tagr(Rs)
-            add_reg( ops, REG_R(d5) );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(d5) );
+            op_reg( ops[1], REG_R(s5) );
             return BIT(22)? Hex_l2tagr : Hex_dctagr;
         }
         break;
@@ -2931,22 +2921,22 @@ static uint32_t iclass_10_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops,
         if( BITS(22:21) == 0 && BIT(13) == 0 && BITS(7:0) == 0 )
         {
             // l2fetch(Rs32,Rt[t]32)
-            add_reg( ops, REG_R(s5) );
-            add_reg( ops, REG_R(t5), BIT(23)? REG_DOUBLE : 0 );
+            op_reg( ops[0], REG_R(s5) );
+            op_reg( ops[1], REG_R(t5), BIT(23)? REG_DOUBLE : 0 );
             return Hex_l2fetch;
         }
         if( BIT(23) == 0 && BITS(13:0) == 0 )
         {
             // l2cleanidx(Rs) or l2unlocka(Rs)
             static const uint8_t itypes[4] = { 0 /*l2fetch*/, Hex_l2cleanidx, Hex_l2invidx, Hex_l2unlocka };
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(s5) );
             return itypes[ BITS(22:21) ];
         }
         if( BIT(23) == 1 && s5 == 0 && BIT(13) == 0 && BITS(7:0) == 0 )
         {
             // l2gclean[inv](Rtt)
             static const uint8_t itypes[4] = { 0, Hex_l2gclean1, Hex_l2gcleaninv1, 0 };
-            add_reg( ops, REG_R(t5), REG_DOUBLE );
+            op_reg( ops[0], REG_R(t5), REG_DOUBLE );
             return itypes[ BITS(22:21) ];
         }
         break;
@@ -2966,7 +2956,7 @@ static uint32_t iclass_10_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops,
         if( BITS(23:21) == 0b011 && BITS(13:0) == 0 )
         {
             // l2cleaninvidx(Rs)
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_R(s5) );
             return Hex_l2cleaninvidx;
         }
         break;
@@ -2978,7 +2968,7 @@ static uint32_t iclass_10_SYS( uint32_t word, uint64_t /*extender*/, op_t **ops,
 // HVX instructions parsing
 //
 
-static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
 {
     if( BIT(27) == 0 ) return 0;
 
@@ -3001,20 +2991,20 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         case 0b1110: code = Hex_vasr3,  f = RP(UB,UH,UH),     flags = IPO_RND_SAT; break;
         default: return 0;
         }
-        add_reg( ops, REG_V(d5), FLG_D(f) );
-        add_reg( ops, REG_V(u5), FLG_S(f)  );
-        add_reg( ops, REG_V(v5), FLG_T(f)  );
-        add_reg( ops, REG_R(t3) );
+        op_reg( ops[0], REG_V(d5), FLG_D(f) );
+        op_reg( ops[1], REG_V(u5), FLG_S(f)  );
+        op_reg( ops[2], REG_V(v5), FLG_T(f)  );
+        op_reg( ops[3], REG_R(t3) );
         return code;
 
     case 0b001:
         if( BITS(23:21) == 0b001 && BITS(7:5) == 0b001 )
         {
             // Vx32.w [+]= vdmpy(Vuu32.h,Rt32.uh,#1):sat
-            add_reg( ops, REG_V(d5), REG_POST_W );
-            add_reg( ops, REG_V(u5), REG_DOUBLE | REG_POST_H );
-            add_reg( ops, REG_R(s5), REG_POST_UH );
-            add_imm( ops, 1 );
+            op_reg( ops[0], REG_V(d5), REG_POST_W );
+            op_reg( ops[1], REG_V(u5), REG_DOUBLE | REG_POST_H );
+            op_reg( ops[2], REG_R(s5), REG_POST_UH );
+            op_imm( ops[3], 1 );
             flags = IPO_SAT | (BIT(13)? IAT_ADD : 0);
             return Hex_vdmpy3;
         }
@@ -3022,10 +3012,10 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         {
             // Vdd32.w [+]= vrmpy(Vuu32.ub,Rt32.b,#Ii) or
             // Vxx32.uw [+]= vrsad(Vuu32.ub,Rt32.ub,#Ii)
-            add_reg( ops, REG_V(d5), REG_DOUBLE | (BIT(6)? REG_POST_UW : REG_POST_W) );
-            add_reg( ops, REG_V(u5), REG_DOUBLE | REG_POST_UB );
-            add_reg( ops, REG_R(s5), BIT(6)? REG_POST_UB : REG_POST_B );
-            add_imm( ops, BIT(5) );
+            op_reg( ops[0], REG_V(d5), REG_DOUBLE | (BIT(6)? REG_POST_UW : REG_POST_W) );
+            op_reg( ops[1], REG_V(u5), REG_DOUBLE | REG_POST_UB );
+            op_reg( ops[2], REG_R(s5), BIT(6)? REG_POST_UB : REG_POST_B );
+            op_imm( ops[3], BIT(5) );
             if( BIT(13) ) flags = IAT_ADD;
             return BIT(6)? Hex_vrsad : Hex_vrmpy3;
         }
@@ -3033,9 +3023,9 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
             (BIT(13) ^ BIT(22)) == 0 && BITS(12:11) == 0 && BITS(7:5) == BITS(23:21) )
         {
             // Vx32 [|]= vand([!]Qu4,Rt32)
-            add_reg( ops, REG_V(d5) );
-            add_reg( ops, REG_Q(BITS(9:8)), BIT(10)? REG_PRE_NOT : 0 );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_V(d5) );
+            op_reg( ops[1], REG_Q(BITS(9:8)), BIT(10)? REG_PRE_NOT : 0 );
+            op_reg( ops[2], REG_R(s5) );
             if( BIT(13) ) flags = IAT_OR;
             return Hex_vand;
         }
@@ -3043,10 +3033,10 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
             (BIT(13) ^ BIT(22)) == 0 && BITS(7:6) == 0b11 )
         {
             // Vxx32.uw [+]= vrmpy(Vuu32.ub,Rt32.ub,#Ii)
-            add_reg( ops, REG_V(d5), REG_DOUBLE | REG_POST_UW );
-            add_reg( ops, REG_V(u5), REG_DOUBLE | REG_POST_UB );
-            add_reg( ops, REG_R(s5), REG_POST_UB );
-            add_imm( ops, BIT(5) );
+            op_reg( ops[0], REG_V(d5), REG_DOUBLE | REG_POST_UW );
+            op_reg( ops[1], REG_V(u5), REG_DOUBLE | REG_POST_UB );
+            op_reg( ops[2], REG_R(s5), REG_POST_UB );
+            op_imm( ops[3], BIT(5) );
             if( BIT(13) ) flags = IAT_ADD;
             return Hex_vrmpy3;
         }
@@ -3054,39 +3044,39 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
             (BITS(23:21) == 0b101 && BIT(13) == 0 && BITS(7:2) == 0b010010) )
         {
             // Qx4 [|]= vand(Vu32,Rt32)
-            add_reg( ops, REG_Q(BITS(1:0)) );
-            add_reg( ops, REG_V(u5) );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_Q(BITS(1:0)) );
+            op_reg( ops[1], REG_V(u5) );
+            op_reg( ops[2], REG_R(s5) );
             if( BIT(13) ) flags = IAT_OR;
             return Hex_vand;
         }
         if( BITS(23:21) == 0b101 && BITS(13:4) == 0b0000000100 && BIT(2) == 1 )
         {
             // Qd4 = vsetq[2](Rt32)
-            add_reg( ops, REG_Q(BITS(1:0)) );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_Q(BITS(1:0)) );
+            op_reg( ops[1], REG_R(s5) );
             return BIT(3)? Hex_vsetq2 : Hex_vsetq;
         }
         if( BITS(23:21) == 0b101 && BITS(12:5) == 0b00000001 )
         {
             // Vd32 = vsplat(Rt32) or Vx32.w = vinsert(Rt32)
-            add_reg( ops, REG_V(d5), BIT(13)? REG_POST_W : 0 );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_V(d5), BIT(13)? REG_POST_W : 0 );
+            op_reg( ops[1], REG_R(s5) );
             return BIT(13)? Hex_vinsert : Hex_vsplat;
         }
         if( BITS(23:21) == 0b110 && BITS(13:7) == 0 && (BIT(6) ^ BIT(5)) == 1 )
         {
             // Vd32.{b|h} = vsplat(Rt32)
-            add_reg( ops, REG_V(d5), BIT(6)? REG_POST_B : REG_POST_H );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_V(d5), BIT(6)? REG_POST_B : REG_POST_H );
+            op_reg( ops[1], REG_R(s5) );
             return Hex_vsplat;
         }
         if( BITS(23:21) == 0b111 && BIT(13) == 1 && (BITS(7:5) == 1 || BITS(7:5) == 2) )
         {
             // v{shuff|deal}(Vy32,Vx32,Rt32)
-            add_reg( ops, REG_V(u5) );
-            add_reg( ops, REG_V(d5) );
-            add_reg( ops, REG_R(s5) );
+            op_reg( ops[0], REG_V(u5) );
+            op_reg( ops[1], REG_V(d5) );
+            op_reg( ops[2], REG_R(s5) );
             return BIT(6)? Hex_vdeal3 : Hex_vshuff3;
         }
         // all other instructions using Rt32
@@ -3169,28 +3159,28 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         case 0b1100101: code = Hex_vrmpy, f = RP( W, B,UB) | DD|TT; break;
         default: return 0;
         }
-        add_reg( ops, REG_V(d5), FLG_D(f) );
-        add_reg( ops, REG_V(u5), FLG_S(f) );
-        add_reg( ops, REG_R(s5), FLG_T(f) );
+        op_reg( ops[0], REG_V(d5), FLG_D(f) );
+        op_reg( ops[1], REG_V(u5), FLG_S(f) );
+        op_reg( ops[2], REG_R(s5), FLG_T(f) );
         return code;
 
     case 0b010:
         if( (BITS(23:16) & 0b11011111) == 0b00000000 && BIT(13) == 0 && BIT(7) == 0 )
         {
             // if ([!]Ps4) Vd32 = Vu32
-            add_reg( ops, REG_P(BITS(6:5)), BIT(21)? REG_PRE_NOT : 0 );
-            add_reg( ops, REG_V(d5) );
-            add_reg( ops, REG_V(u5) );
+            op_reg( ops[PRED_A], REG_P(BITS(6:5)), BIT(21)? REG_PRE_NOT : 0 );
+            op_reg( ops[0], REG_V(d5) );
+            op_reg( ops[1], REG_V(u5) );
             flags = PRED_REG;
             return Hex_mov;
         }
         if( BITS(23:22) == 0b01 && BIT(13) == 0 && BIT(7) == 0 )
         {
             // if ([!]Ps4) Vdd32 = vcombine(Vu32,Vv32)
-            add_reg( ops, REG_P(BITS(6:5)), BIT(21)? 0 : REG_PRE_NOT );
-            add_reg( ops, REG_V(d5), REG_DOUBLE );
-            add_reg( ops, REG_V(u5) );
-            add_reg( ops, REG_V(s5) );
+            op_reg( ops[PRED_A], REG_P(BITS(6:5)), BIT(21)? 0 : REG_PRE_NOT );
+            op_reg( ops[0], REG_V(d5), REG_DOUBLE );
+            op_reg( ops[1], REG_V(u5) );
+            op_reg( ops[2], REG_V(s5) );
             flags = PRED_REG;
             return Hex_vcombine;
         }
@@ -3217,10 +3207,10 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         case 0b1111: code = Hex_vlut16,  f = RP( H, B, H) | DD, flags = IAT_OR; break;
         default: return 0;
         }
-        add_reg( ops, REG_V(d5), FLG_D(f) );
-        add_reg( ops, REG_V(u5), FLG_S(f) );
-        add_reg( ops, REG_V(v5), FLG_T(f) );
-        add_reg( ops, REG_R(t3) );
+        op_reg( ops[0], REG_V(d5), FLG_D(f) );
+        op_reg( ops[1], REG_V(u5), FLG_S(f) );
+        op_reg( ops[2], REG_V(v5), FLG_T(f) );
+        op_reg( ops[3], REG_R(t3) );
         return code;
 
     case 0b100:
@@ -3234,29 +3224,29 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
             };
             uint32_t type = rtypes[ (BIT(5) << 2) | BITS(3:2) ];
 
-            add_reg( ops, REG_Q(BITS(1:0)) );
-            add_reg( ops, REG_V(u5), type );
-            add_reg( ops, REG_V(s5), type );
+            op_reg( ops[0], REG_Q(BITS(1:0)) );
+            op_reg( ops[1], REG_V(u5), type );
+            op_reg( ops[2], REG_V(s5), type );
             flags = ((BITS(5:4)? CMP_GT : CMP_EQ)) | ass[ BITS(7:6) ];
             return Hex_vcmp;
         }
         if( BITS(23:21) == 0b101 && BIT(13) == 1 )
         {
             // Vd32.w = v{add|sub}(Vu32.w,Vv32.w,Qx4):carry or
-            add_reg( ops, REG_V(d5), REG_POST_W );
-            add_reg( ops, REG_V(u5), REG_POST_W );
-            add_reg( ops, REG_V(s5), REG_POST_W );
-            add_reg( ops, REG_Q(BITS(6:5)) );
+            op_reg( ops[0], REG_V(d5), REG_POST_W );
+            op_reg( ops[1], REG_V(u5), REG_POST_W );
+            op_reg( ops[2], REG_V(s5), REG_POST_W );
+            op_reg( ops[3], REG_Q(BITS(6:5)) );
             flags = IPO_CARRY;
             return BIT(7)? Hex_vsub3 : Hex_vadd3;
         }
         if( BITS(23:22) == 0b11 && BIT(13) == 1 )
         {
             // Vx[x]32.{b|h} |= vlut{16|32}(Vu32.b,Vv32.{b|h},#Ii)
-            add_reg( ops, REG_V(d5), BIT(21)? REG_DOUBLE | REG_POST_H : REG_POST_B );
-            add_reg( ops, REG_V(u5), REG_POST_B );
-            add_reg( ops, REG_V(s5), BIT(21)? REG_POST_H : REG_POST_B );
-            add_imm( ops, BITS(7:5) );
+            op_reg( ops[0], REG_V(d5), BIT(21)? REG_DOUBLE | REG_POST_H : REG_POST_B );
+            op_reg( ops[1], REG_V(u5), REG_POST_B );
+            op_reg( ops[2], REG_V(s5), BIT(21)? REG_POST_H : REG_POST_B );
+            op_imm( ops[3], BITS(7:5) );
             flags = IAT_OR;
             return BIT(21)? Hex_vlut16 : Hex_vlut32;
         }
@@ -3266,20 +3256,20 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         if( BITS(23:21) == 0b100 && BIT(13) == 1 && BIT(7) == 0 )
         {
             // Vd32.w = vadd(Vu32.w,Vv32.w,Qs4):carry:sat
-            add_reg( ops, REG_V(d5), REG_POST_W );
-            add_reg( ops, REG_V(u5), REG_POST_W );
-            add_reg( ops, REG_V(s5), REG_POST_W );
-            add_reg( ops, REG_Q(BITS(6:5)) );
+            op_reg( ops[0], REG_V(d5), REG_POST_W );
+            op_reg( ops[1], REG_V(u5), REG_POST_W );
+            op_reg( ops[2], REG_V(s5), REG_POST_W );
+            op_reg( ops[3], REG_Q(BITS(6:5)) );
             flags = IPO_CARRY_SAT;
             return Hex_vadd3;
         }
         if( BITS(23:21) == 0b101 && BIT(13) == 1 )
         {
             // Vd32.w,Qe4 = v{add|sub}(Vu32.w,Vv32.w):carry
-            add_reg( ops, REG_V(d5), REG_POST_W );
-            add_reg( ops, REG_Q(BITS(6:5)) );
-            add_reg( ops, REG_V(u5), REG_POST_W );
-            add_reg( ops, REG_V(s5), REG_POST_W );
+            op_reg( ops[0], REG_V(d5), REG_POST_W );
+            op_reg( ops[1], REG_Q(BITS(6:5)) );
+            op_reg( ops[2], REG_V(u5), REG_POST_W );
+            op_reg( ops[3], REG_V(s5), REG_POST_W );
             flags = IPO_CARRY;
             return BIT(7)? Hex_vsub2d : Hex_vadd2d;
         }
@@ -3294,16 +3284,20 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
                 Hex_vhist,  Hex_vwhist256,   Hex_vwhist128,   Hex_vwhist128_1,
                 Hex_vhist1, Hex_vwhist256_1, Hex_vwhist128_1, Hex_vwhist128_2,
             };
-            if( BIT(17) ) add_reg( ops, REG_Q(BITS(23:22)) );
-            add_imm( ops, BIT(8) );
+            if( BIT(17) ) {
+                op_reg( ops[0], REG_Q(BITS(23:22)) );
+                op_imm( ops[1], BIT(8) );
+            }
+            else
+                op_imm( ops[0], BIT(8) );
             if( BITS(10:8) == 0b011 ) flags = IPO_SAT;
             return itype[ (BIT(17) << 2) | BITS(10:9) ];
         }
         if( BITS(23:16) == 0b00000011 && BIT(13) == 1 && BITS(7:5) == 0b111 )
         {
             // Vd32 = Vu32
-            add_reg( ops, REG_V(d5) );
-            add_reg( ops, REG_V(u5) );
+            op_reg( ops[0], REG_V(d5) );
+            op_reg( ops[1], REG_V(u5) );
             return Hex_mov;
         }
         if( BITS(21:18) == 0 && (BIT(17) ^ BIT(16)) == 1 && BIT(13) == 1 )
@@ -3311,9 +3305,9 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
             // if ([!]Qv4) Vx32.{b|h|w} ±= Vu32.{b|h|w}
             uint32_t code = (BIT(17) << 3) | BITS(7:5);
             uint32_t rf = REG_POST_B + ((code % 3) << REG_POST_SHIFT);
-            add_reg( ops, REG_Q(BITS(23:22)), (code / 3 & 1)? REG_PRE_NOT : 0 );
-            add_reg( ops, REG_V(d5), rf );
-            add_reg( ops, REG_V(u5), rf );
+            op_reg( ops[PRED_A], REG_Q(BITS(23:22)), (code / 3 & 1)? REG_PRE_NOT : 0 );
+            op_reg( ops[0], REG_V(d5), rf );
+            op_reg( ops[1], REG_V(u5), rf );
             flags = PRED_REG | (code < 6? IAT_ADD : IAT_SUB);
             return Hex_mov;
         }
@@ -3328,18 +3322,18 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
             case 0b10: code = Hex_valign; break;
             case 0b11: code = Hex_vlalign; break;
             }
-            add_reg( ops, REG_V(d5), FLG_D(f) );
-            add_reg( ops, REG_V(u5), FLG_S(f) );
-            add_reg( ops, REG_V(s5), FLG_T(f) );
-            add_imm( ops, BITS(7:5) );
+            op_reg( ops[0], REG_V(d5), FLG_D(f) );
+            op_reg( ops[1], REG_V(u5), FLG_S(f) );
+            op_reg( ops[2], REG_V(s5), FLG_T(f) );
+            op_imm( ops[3], BITS(7:5) );
             return code;
         }
         if( BITS(21:16) == 0b000011 && (BITS(13:5) & 0b111100111) == 0b100000010 &&
             BITS(9:8) != 3 )
         {
             // Vd32.{b|h|w} = prefixsum(Qv4)
-            add_reg( ops, REG_V(d5), REG_POST_B + (BITS(9:8) << REG_POST_SHIFT) );
-            add_reg( ops, REG_Q(BITS(23:22)) );
+            op_reg( ops[0], REG_V(d5), REG_POST_B + (BITS(9:8) << REG_POST_SHIFT) );
+            op_reg( ops[1], REG_Q(BITS(23:22)) );
             return Hex_prefixsum;
         }
         if( BITS(21:16) == 0b000011 && BITS(13:10) == 0 && BITS(7:5) == 0 )
@@ -3356,33 +3350,33 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
             case 6: code = Hex_vshuffe, f = RP(B, H, H); break;
             case 7: code = Hex_vshuffe, f = RP(H, W, W); break;
             }
-            add_reg( ops, REG_Q(BITS(1:0)), FLG_D(f) );
-            add_reg( ops, REG_Q(BITS(9:8)), FLG_S(f) );
-            add_reg( ops, REG_Q(BITS(23:22)), FLG_T(f) );
+            op_reg( ops[0], REG_Q(BITS(1:0)), FLG_D(f) );
+            op_reg( ops[1], REG_Q(BITS(9:8)), FLG_S(f) );
+            op_reg( ops[2], REG_Q(BITS(23:22)), FLG_T(f) );
             return code;
         }
         if( (BITS(23:21) & 0b101) == 0b101 && BIT(13) == 1 && BIT(7) == 0 )
         {
             // Vd[d]32 = v{swap|mux}(Qt4,Vu32,Vv32)
-            add_reg( ops, REG_V(d5), BIT(22)? 0 : REG_DOUBLE );
-            add_reg( ops, REG_Q(BITS(6:5)) );
-            add_reg( ops, REG_V(u5) );
-            add_reg( ops, REG_V(s5) );
+            op_reg( ops[0], REG_V(d5), BIT(22)? 0 : REG_DOUBLE );
+            op_reg( ops[1], REG_Q(BITS(6:5)) );
+            op_reg( ops[2], REG_V(u5) );
+            op_reg( ops[3], REG_V(s5) );
             return BIT(22)? Hex_vmux : Hex_vswap;
         }
         if( BITS(21:16) == 0b000011 && BIT(13) == 1 && BITS(7:6) == 0 )
         {
             // Vd32 = vand([!]Qv4,Vu32)
-            add_reg( ops, REG_V(d5) );
-            add_reg( ops, REG_Q(BITS(23:22)), BIT(5)? REG_PRE_NOT : 0 );
-            add_reg( ops, REG_V(u5) );
+            op_reg( ops[0], REG_V(d5) );
+            op_reg( ops[1], REG_Q(BITS(23:22)), BIT(5)? REG_PRE_NOT : 0 );
+            op_reg( ops[2], REG_V(u5) );
             return Hex_vand;
         }
         if( BITS(23:16) == 0b00000000 && BIT(13) == 1 && BITS(7:6) == 0 )
         {
             // Vxx32.{h|w} |= vunpacko(Vu32.{b|h})
-            add_reg( ops, REG_V(d5), BIT(5)? REG_POST_W : REG_POST_H );
-            add_reg( ops, REG_V(u5), BIT(5)? REG_POST_H : REG_POST_B );
+            op_reg( ops[0], REG_V(d5), BIT(5)? REG_POST_W : REG_POST_H );
+            op_reg( ops[1], REG_V(u5), BIT(5)? REG_POST_H : REG_POST_B );
             flags = IAT_OR;
             return Hex_vunpacko;
         }
@@ -3418,8 +3412,8 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
                case 0b11101: code = Hex_vnormamt,  f = RP( H, H, _); break;
                default: return 0;
             }
-            add_reg( ops, REG_V(d5), FLG_D(f) );
-            add_reg( ops, REG_V(u5), FLG_S(f) );
+            op_reg( ops[0], REG_V(d5), FLG_D(f) );
+            op_reg( ops[1], REG_V(u5), FLG_S(f) );
             return code;
         }
         break;
@@ -3434,9 +3428,9 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
             };
             uint32_t type = rtypes[ (BIT(5) << 2) | BITS(3:2) ];
 
-            add_reg( ops, REG_Q(BITS(1:0)) );
-            add_reg( ops, REG_V(u5), type );
-            add_reg( ops, REG_V(s5), type );
+            op_reg( ops[0], REG_Q(BITS(1:0)) );
+            op_reg( ops[1], REG_V(u5), type );
+            op_reg( ops[2], REG_V(s5), type );
             flags = (BITS(5:4)? CMP_GT : CMP_EQ);
             return Hex_vcmp;
         }
@@ -3603,21 +3597,21 @@ static uint32_t iclass_1_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
     case 0b1111110111: code = Hex_vmpyo,    f = RP( W, W, H), flags = IPO_LS1_SAT; break;
     default: return 0;
     }
-    add_reg( ops, REG_V(d5), FLG_D(f) );
-    add_reg( ops, REG_V(u5), FLG_S(f) );
-    add_reg( ops, REG_V(s5), FLG_T(f) );
+    op_reg( ops[0], REG_V(d5), FLG_D(f) );
+    op_reg( ops[1], REG_V(u5), FLG_S(f) );
+    op_reg( ops[2], REG_V(s5), FLG_T(f) );
     return code;
 }
 
-static uint32_t iclass_1_ZReg( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+static uint32_t iclass_1_ZReg( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), u5 = BITS(12:8), d5 = BITS(4:0), t3 = BITS(18:16);
 
     if( BITS(27:21) == 0b1001101 && BITS(13:5) == 0b000001001 )
     {
         // Vd32 = zextract(Rt32)
-        add_reg( ops, REG_V(d5) );
-        add_reg( ops, REG_R(s5) );
+        op_reg( ops[0], REG_V(d5) );
+        op_reg( ops[1], REG_R(s5) );
         return Hex_zextract;
     }
     if( BITS(27:22) == 0b100111 && (BIT(21) ^ BIT(13)) == 1 && BIT(7) == 0 )
@@ -3629,10 +3623,10 @@ static uint32_t iclass_1_ZReg( uint32_t word, uint64_t /*extender*/, op_t **ops,
             Hex_vrmpyz, Hex_vr8mpyz, Hex_vr16mpyz, 0,
             Hex_vr16mpyzs, Hex_vrmpyz,
         };
-        add_reg( ops, REG_V(d5), REG_QUAD | REG_POST_W );
-        add_reg( ops, REG_V(u5), code == 1? REG_POST_N :
-                                 (code == 2 || code == 4)? REG_POST_C : REG_POST_B );
-        add_reg( ops, REG_R(t3), (code == 5? REG_POST_UB : REG_POST_B) |
+        op_reg( ops[0], REG_V(d5), REG_QUAD | REG_POST_W );
+        op_reg( ops[1], REG_V(u5), code == 1? REG_POST_N :
+                                   (code == 2 || code == 4)? REG_POST_C : REG_POST_B );
+        op_reg( ops[2], REG_R(t3), (code == 5? REG_POST_UB : REG_POST_B) |
                                  ((BIT(21) ^ BIT(19))? REG_POST_INC : 0) );
         if( !BIT(21) ) flags = IAT_ADD;
         return code < _countof(itype)? itype[code] : 0;
@@ -3640,7 +3634,7 @@ static uint32_t iclass_1_ZReg( uint32_t word, uint64_t /*extender*/, op_t **ops,
     return 0;
 }
 
-static uint32_t iclass_1_HVX_v68( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+static uint32_t iclass_1_HVX_v68( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
 {
     if( BITS(27:26) != 0b11 || BIT(13) != 1 )
         return 0;
@@ -3659,9 +3653,9 @@ static uint32_t iclass_1_HVX_v68( uint32_t word, uint64_t /*extender*/, op_t **o
         default:      return 0;
         }
         uint32_t type = BIT(2)? REG_POST_HF : REG_POST_SF;
-        add_reg( ops, REG_Q(BITS(1:0)) );
-        add_reg( ops, REG_V(u5), type );
-        add_reg( ops, REG_V(s5), type );
+        op_reg( ops[0], REG_Q(BITS(1:0)) );
+        op_reg( ops[1], REG_V(u5), type );
+        op_reg( ops[2], REG_V(s5), type );
         return Hex_vcmp;
     }
     if( BITS(25:18) == 0b10000001 )
@@ -3686,17 +3680,17 @@ static uint32_t iclass_1_HVX_v68( uint32_t word, uint64_t /*extender*/, op_t **o
         case 0b10101: code = Hex_vabs,  f = RP(SF, SF, _); break;
         default:      return 0;
         }
-        add_reg( ops, REG_V(d5), FLG_D(f) );
-        add_reg( ops, REG_V(u5), FLG_S(f) );
+        op_reg( ops[0], REG_V(d5), FLG_D(f) );
+        op_reg( ops[1], REG_V(u5), FLG_S(f) );
         return code;
     }
     if( BITS(25:23) == 0b110 && (BIT(22) ^ BIT(21)) == 1 )
     {
         // Vdd32.w [+]= v6mpy(Vuu32.ub,Vvv32.b,#u2):{v|h}
-        add_reg( ops, REG_V(d5), REG_DOUBLE | REG_POST_W );
-        add_reg( ops, REG_V(u5), REG_DOUBLE | REG_POST_UB );
-        add_reg( ops, REG_V(s5), REG_DOUBLE | REG_POST_B );
-        add_imm( ops, BITS(6:5) );
+        op_reg( ops[0], REG_V(d5), REG_DOUBLE | REG_POST_W );
+        op_reg( ops[1], REG_V(u5), REG_DOUBLE | REG_POST_UB );
+        op_reg( ops[2], REG_V(s5), REG_DOUBLE | REG_POST_B );
+        op_imm( ops[3], BITS(6:5) );
         flags = (BIT(21)? IAT_ADD : 0) |
                 (BIT(7)?  IPO_H : IPO_V);
         return Hex_v6mpy;
@@ -3751,46 +3745,46 @@ static uint32_t iclass_1_HVX_v68( uint32_t word, uint64_t /*extender*/, op_t **o
     case 0b11111111: code = Hex_vmpy,  f = RP(Q32, HF, HF) | DD; break;
     default: return 0;
     }
-    add_reg( ops, REG_V(d5), FLG_D(f) );
-    add_reg( ops, REG_V(u5), FLG_S(f) );
-    add_reg( ops, REG_V(s5), FLG_T(f) );
+    op_reg( ops[0], REG_V(d5), FLG_D(f) );
+    op_reg( ops[1], REG_V(u5), FLG_S(f) );
+    op_reg( ops[2], REG_V(s5), FLG_T(f) );
     return code;
 }
 
-static uint32_t iclass_1_HVX_v69( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+static uint32_t iclass_1_HVX_v69( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), u5 = BITS(12:8), d5 = BITS(4:0);
 
     if( BITS(27:21) == 0b1101000 && BIT(13) == 0 && BIT(7) == 0 )
     {
         // Vd32.{uh|ub} = vasr(Vuu32.{w|uh},Vv32.{uh|ub})[:rnd]:sat
-        add_reg( ops, REG_V(d5), BIT(6)? REG_POST_UB : REG_POST_UH );
-        add_reg( ops, REG_V(u5), REG_DOUBLE | (BIT(6)? REG_POST_UH : REG_POST_W) );
-        add_reg( ops, REG_V(s5), BIT(6)? REG_POST_UB : REG_POST_UH );
+        op_reg( ops[0], REG_V(d5), BIT(6)? REG_POST_UB : REG_POST_UH );
+        op_reg( ops[1], REG_V(u5), REG_DOUBLE | (BIT(6)? REG_POST_UH : REG_POST_W) );
+        op_reg( ops[2], REG_V(s5), BIT(6)? REG_POST_UB : REG_POST_UH );
         flags = BIT(5)? IPO_RND_SAT : IPO_SAT;
         return Hex_vasr;
     }
     if( BITS(27:21) == 0b1110000 && BITS(20:16) == 0b00001 && BIT(13) == 0 && BITS(7:5) == 0b110 )
     {
         // Vd32.tmp = Vu32
-        add_reg( ops, REG_V(d5), REG_POST_TMP );
-        add_reg( ops, REG_V(u5) );
+        op_reg( ops[0], REG_V(d5), REG_POST_TMP );
+        op_reg( ops[1], REG_V(u5) );
         return Hex_mov;
     }
     if( BITS(27:21) == 0b1110101 && BIT(13) == 0 && BITS(7:5) == 0b111 )
     {
         // Vdd32.tmp = vcombine(Vu32,Vv32)
-        add_reg( ops, REG_V(d5), REG_DOUBLE | REG_POST_TMP );
-        add_reg( ops, REG_V(u5) );
-        add_reg( ops, REG_V(s5) );
+        op_reg( ops[0], REG_V(d5), REG_DOUBLE | REG_POST_TMP );
+        op_reg( ops[1], REG_V(u5) );
+        op_reg( ops[2], REG_V(s5) );
         return Hex_vcombine;
     }
     if( BITS(27:21) == 0b1111110 && BIT(13) == 1 && BITS(7:5) == 0b111 )
     {
         // Vd32.uh = vmpy(Vu32.uh,Vv32.uh):>>16
-        add_reg( ops, REG_V(d5), REG_POST_UH );
-        add_reg( ops, REG_V(u5), REG_POST_UH );
-        add_reg( ops, REG_V(s5), REG_POST_UH );
+        op_reg( ops[0], REG_V(d5), REG_POST_UH );
+        op_reg( ops[1], REG_V(u5), REG_POST_UH );
+        op_reg( ops[2], REG_V(s5), REG_POST_UH );
         flags = IPO_RS16;
         return Hex_vmpy;
     }
@@ -3798,7 +3792,7 @@ static uint32_t iclass_1_HVX_v69( uint32_t word, uint64_t /*extender*/, op_t **o
     return 0;
 }
 
-static uint32_t iclass_2_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+static uint32_t iclass_2_HVX( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), u5 = BITS(12:8), d5 = BITS(4:0);
     uint32_t mu = BIT(13)? REG_M1 : REG_M0, p2 = BITS(12:11), mtype;
@@ -3819,41 +3813,41 @@ static uint32_t iclass_2_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         if( (BITS(23:21) & 0b101) == 0b001 && BITS(7:5) == 0 )
         {
             // vmem(Rx32+...)[:nt] = Vs32
-            if( !mem_inc) add_mem_ind( ops, mtype, REG_R(s5), imm );
-            else          add_mem_inc( ops, BIT(25)? o_mem_inc_reg : o_mem_inc_imm, mtype,
-                                       REG_R(s5), imm, mu );
-            add_reg( ops, REG_V(d5) );
+            if( !mem_inc) op_mem_ind( ops[0], mtype, REG_R(s5), imm );
+            else          op_mem_inc( ops[0], BIT(25)? o_mem_inc_reg : o_mem_inc_imm, mtype,
+                                      REG_R(s5), imm, mu );
+            op_reg( ops[1], REG_V(d5) );
             return Hex_mov;
         }
         if( (BITS(23:21) & 0b101) == 0b001 && BITS(7:3) == 0b00100 )
         {
             // vmem(Rx32+...)[:nt] = Os8.new
-            if( !mem_inc) add_mem_ind( ops, mtype, REG_R(s5), imm );
-            else          add_mem_inc( ops, BIT(25)? o_mem_inc_reg : o_mem_inc_imm, mtype,
-                                       REG_R(s5), imm, mu );
-            add_reg( ops, new_value( BITS(2:0), true ), REG_POST_NEW );
+            if( !mem_inc) op_mem_ind( ops[0], mtype, REG_R(s5), imm );
+            else          op_mem_inc( ops[0], BIT(25)? o_mem_inc_reg : o_mem_inc_imm, mtype,
+                                      REG_R(s5), imm, mu );
+            op_reg( ops[1], new_value( BITS(2:0), true ), REG_POST_NEW );
             return Hex_mov;
         }
         if( (BITS(23:21) & 0b101) == 0b101 && BITS(7:6) == 0b01 &&
             (BIT(4) ^ BIT(22)) == 0 && (BIT(3) ^ BIT(5)) == 0 )
         {
             // if ([!]{Pv4|Qv4}) vmem(Rx32+...)[:nt] = Os8.new
-            add_reg( ops, REG_P(p2), BIT(5)? REG_PRE_NOT : 0 );
-            if( !mem_inc) add_mem_ind( ops, mtype, REG_R(s5), imm );
-            else          add_mem_inc( ops, BIT(25)? o_mem_inc_reg : o_mem_inc_imm, mtype,
-                                       REG_R(s5), imm, mu );
-            add_reg( ops, new_value( BITS(2:0), true ), REG_POST_NEW );
+            op_reg( ops[PRED_A], REG_P(p2), BIT(5)? REG_PRE_NOT : 0 );
+            if( !mem_inc) op_mem_ind( ops[0], mtype, REG_R(s5), imm );
+            else          op_mem_inc( ops[0], BIT(25)? o_mem_inc_reg : o_mem_inc_imm, mtype,
+                                      REG_R(s5), imm, mu );
+            op_reg( ops[1], new_value( BITS(2:0), true ), REG_POST_NEW );
             flags = PRED_REG;
             return Hex_mov;
         }
         if( BIT(23) && BITS(7:6) == 0 )
         {
             // if ([!]{Pv4|Qv4}) vmem(Rx32+...)[:nt] = Vs32
-            add_reg( ops, BIT(21)? REG_P(p2) : REG_Q(p2), BIT(5)? REG_PRE_NOT : 0 );
-            if( !mem_inc) add_mem_ind( ops, mtype, REG_R(s5), imm );
-            else          add_mem_inc( ops, BIT(25)? o_mem_inc_reg : o_mem_inc_imm, mtype,
-                                       REG_R(s5), imm, mu );
-            add_reg( ops, REG_V(d5) );
+            op_reg( ops[PRED_A], BIT(21)? REG_P(p2) : REG_Q(p2), BIT(5)? REG_PRE_NOT : 0 );
+            if( !mem_inc) op_mem_ind( ops[0], mtype, REG_R(s5), imm );
+            else          op_mem_inc( ops[0], BIT(25)? o_mem_inc_reg : o_mem_inc_imm, mtype,
+                                      REG_R(s5), imm, mu );
+            op_reg( ops[1], REG_V(d5) );
             flags = PRED_REG;
             return Hex_mov;
         }
@@ -3862,11 +3856,11 @@ static uint32_t iclass_2_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
             // if ([!]Pv4) Vd32[.tmp|.cur] = vmem(Rx32+...)[:nt]
             static const uint8_t vdf[4] = { 0, 0, REG_POST_CUR, REG_POST_TMP };
 
-            add_reg( ops, REG_P(p2), BIT(5)? REG_PRE_NOT : 0 );
-            add_reg( ops, REG_V(d5), vdf[ BITS(7:6) ] );
-            if( !mem_inc) add_mem_ind( ops, mtype, REG_R(s5), imm );
-            else          add_mem_inc( ops, BIT(25)? o_mem_inc_reg : o_mem_inc_imm, mtype,
-                                       REG_R(s5), imm, mu );
+            op_reg( ops[PRED_A], REG_P(p2), BIT(5)? REG_PRE_NOT : 0 );
+            op_reg( ops[0], REG_V(d5), vdf[ BITS(7:6) ] );
+            if( !mem_inc) op_mem_ind( ops[1], mtype, REG_R(s5), imm );
+            else          op_mem_inc( ops[1], BIT(25)? o_mem_inc_reg : o_mem_inc_imm, mtype,
+                                      REG_R(s5), imm, mu );
             flags = PRED_REG;
             return Hex_mov;
         }
@@ -3875,39 +3869,45 @@ static uint32_t iclass_2_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
             // Vd32[.tmp|.cur] = vmem(Rx32+...)[:nt]
             static const uint8_t vdf[] = { 0, REG_POST_CUR, REG_POST_TMP };
 
-            add_reg( ops, REG_V(d5), vdf[ BITS(7:5) ] );
-            if( !mem_inc) add_mem_ind( ops, mtype, REG_R(s5), imm );
-            else          add_mem_inc( ops, BIT(25)? o_mem_inc_reg : o_mem_inc_imm, mtype,
-                                       REG_R(s5), imm, mu );
+            op_reg( ops[0], REG_V(d5), vdf[ BITS(7:5) ] );
+            if( !mem_inc) op_mem_ind( ops[1], mtype, REG_R(s5), imm );
+            else          op_mem_inc( ops[1], BIT(25)? o_mem_inc_reg : o_mem_inc_imm, mtype,
+                                      REG_R(s5), imm, mu );
             return Hex_mov;
         }
         if( (BITS(23:21) & 0b110) == 0b000 && BITS(7:5) == 0b111 )
         {
             // Vd32 = vmemu(Rx32+...) or vmemu(Rx32+...) = Vs32
-            if( !BIT(21) ) add_reg( ops, REG_V(d5) );
-            if( !mem_inc) add_mem_ind( ops, MEM_VU, REG_R(s5), imm );
-            else          add_mem_inc( ops, BIT(25)? o_mem_inc_reg : o_mem_inc_imm, MEM_VU,
-                                       REG_R(s5), imm, mu );
-            if( BIT(21) ) add_reg( ops, REG_V(d5) );
+            if( !BIT(21) ) {
+                op_reg( ops[0], REG_V(d5) );
+                if( !mem_inc) op_mem_ind( ops[1], MEM_VU, REG_R(s5), imm );
+                else          op_mem_inc( ops[1], BIT(25)? o_mem_inc_reg : o_mem_inc_imm, MEM_VU,
+                                          REG_R(s5), imm, mu );
+            } else {
+                if( !mem_inc) op_mem_ind( ops[0], MEM_VU, REG_R(s5), imm );
+                else          op_mem_inc( ops[0], BIT(25)? o_mem_inc_reg : o_mem_inc_imm, MEM_VU,
+                                          REG_R(s5), imm, mu );
+                op_reg( ops[1], REG_V(d5) );
+            }
             return Hex_mov;
         }
         if( BITS(23:21) == 0b101 && BITS(7:6) == 0b11 )
         {
             // if ([!]Pv4) vmemu(Rx32+...) = Vs32
-            add_reg( ops, REG_P(p2), BIT(5)? REG_PRE_NOT : 0 );
-            if( !mem_inc) add_mem_ind( ops, MEM_VU, REG_R(s5), imm );
-            else          add_mem_inc( ops, BIT(25)? o_mem_inc_reg : o_mem_inc_imm, MEM_VU,
-                                       REG_R(s5), imm, mu );
-            add_reg( ops, REG_V(d5) );
+            op_reg( ops[PRED_A], REG_P(p2), BIT(5)? REG_PRE_NOT : 0 );
+            if( !mem_inc) op_mem_ind( ops[0], MEM_VU, REG_R(s5), imm );
+            else          op_mem_inc( ops[0], BIT(25)? o_mem_inc_reg : o_mem_inc_imm, MEM_VU,
+                                      REG_R(s5), imm, mu );
+            op_reg( ops[1], REG_V(d5) );
             flags = PRED_REG;
             return Hex_mov;
         }
         if( BITS(23:21) == 0b001 && BITS(12:11) == 0 && BITS(7:0) == 0b00101000 )
         {
             // vmem(Rx32+...):scatter_release
-            if( !mem_inc ) add_mem_ind( ops, MEM_V, REG_R(s5), imm );
-            else           add_mem_inc( ops, BIT(25)? o_mem_inc_reg : o_mem_inc_imm, MEM_V,
-                                        REG_R(s5), imm, mu );
+            if( !mem_inc ) op_mem_ind( ops[0], MEM_V, REG_R(s5), imm );
+            else           op_mem_inc( ops[0], BIT(25)? o_mem_inc_reg : o_mem_inc_imm, MEM_V,
+                                       REG_R(s5), imm, mu );
             return Hex_vscatterrls;
         }
         break;
@@ -3917,36 +3917,36 @@ static uint32_t iclass_2_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         {
             // [if (Qs4)] vtmp.{w|h} = vgather(Rt32,Mu2,Vv32.{w|h}).{w|h}
             uint32_t s2 = BITS(6:5);
-            if( BIT(10) ) add_reg( ops, REG_Q(s2) );
+            if( BIT(10) ) op_reg( ops[PRED_A], REG_Q(s2) );
             else if( s2 ) return 0;
-            add_reg( ops, REG_VTMP, BITS(9:8)? REG_POST_H : REG_POST_W );
-            add_reg( ops, REG_R(s5) );
-            add_reg( ops, mu );
-            add_reg( ops, REG_V(d5), BIT(8)? REG_POST_H : (REG_POST_W |
-                                     (BIT(9)? REG_DOUBLE : 0)) );
+            op_reg( ops[0], REG_VTMP, BITS(9:8)? REG_POST_H : REG_POST_W );
+            op_reg( ops[1], REG_R(s5) );
+            op_reg( ops[2], mu );
+            op_reg( ops[3], REG_V(d5), BIT(8)? REG_POST_H : (REG_POST_W |
+                                       (BIT(9)? REG_DOUBLE : 0)) );
             flags = (BIT(10)? PRED_REG : 0) | (BITS(9:8)? SG_H : SG_W);
             return Hex_vgather;
         }
         if( BITS(23:21) == 0b001 && BITS(6:5) != 3 )
         {
             // vscatter(Rt32,Mu2,Vvv32.{w|h}).{w|h} [+]= Vw32
-            add_reg( ops, REG_R(s5) );
-            add_reg( ops, mu );
-            add_reg( ops, REG_V(u5), BIT(5)? REG_POST_H : (REG_POST_W |
-                                     (BIT(6)? REG_DOUBLE : 0)) );
-            add_reg( ops, REG_V(d5) );
+            op_reg( ops[0], REG_R(s5) );
+            op_reg( ops[1], mu );
+            op_reg( ops[2], REG_V(u5), BIT(5)? REG_POST_H : (REG_POST_W |
+                                       (BIT(6)? REG_DOUBLE : 0)) );
+            op_reg( ops[3], REG_V(d5) );
             flags = (BITS(6:5)? SG_H : SG_W) | (BIT(7)? IAT_ADD : 0);
             return Hex_vscatter;
         }
         if( BITS(23:22) == 0b10 && (BIT(21) & BIT(7)) != 1 )
         {
             // if (Qs4) vscatter(Rt32,Mu2,Vvv32.{w|h}).{w|h} = Vw32
-            add_reg( ops, REG_Q(BITS(6:5)) );
-            add_reg( ops, REG_R(s5) );
-            add_reg( ops, mu );
-            add_reg( ops, REG_V(u5), BIT(7)? REG_POST_H : (REG_POST_W |
-                                     (BIT(21)? REG_DOUBLE : 0)) );
-            add_reg( ops, REG_V(d5) );
+            op_reg( ops[PRED_A], REG_Q(BITS(6:5)) );
+            op_reg( ops[0], REG_R(s5) );
+            op_reg( ops[1], mu );
+            op_reg( ops[2], REG_V(u5), BIT(7)? REG_POST_H : (REG_POST_W |
+                                       (BIT(21)? REG_DOUBLE : 0)) );
+            op_reg( ops[3], REG_V(d5) );
             flags = PRED_REG | ((BIT(21) | BIT(7))? SG_H : SG_W);
             return Hex_vscatter;
         }
@@ -3955,7 +3955,7 @@ static uint32_t iclass_2_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
     return 0;
 }
 
-static uint32_t iclass_2_ZReg( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+static uint32_t iclass_2_ZReg( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
 {
     bool     has_pred = BIT(23), mem_inc = BIT(24), reg = BIT(0);
     uint32_t s5 = BITS(20:16), mu = BIT(13)? REG_M1 : REG_M0, p2 = BITS(12:11);
@@ -3970,28 +3970,28 @@ static uint32_t iclass_2_ZReg( uint32_t word, uint64_t /*extender*/, op_t **ops,
 
         if( has_pred )
         {
-            add_reg( ops, REG_P(p2) );
+            op_reg( ops[PRED_A], REG_P(p2) );
             flags = PRED_REG;
         }
-        add_reg( ops, REG_Z );
-        if( !mem_inc ) add_mem_ind( ops, MEM_V, REG_R(s5), imm );
-        else           add_mem_inc( ops, reg? o_mem_inc_reg : o_mem_inc_imm, MEM_V,
-                                    REG_R(s5), imm, mu );
+        op_reg( ops[0], REG_Z );
+        if( !mem_inc ) op_mem_ind( ops[1], MEM_V, REG_R(s5), imm );
+        else           op_mem_inc( ops[1], reg? o_mem_inc_reg : o_mem_inc_imm, MEM_V,
+                                   REG_R(s5), imm, mu );
         return Hex_mov;
     }
     return 0;
 }
 
-static uint32_t iclass_9_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
+static uint32_t iclass_9_HVX( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &/*flags*/ )
 {
     uint32_t s5 = BITS(20:16), u5 = BITS(12:8), d5 = BITS(4:0);
 
     if( BITS(27:21) == 0b0010000 && BIT(13) == 0 && BITS(7:5) == 0b001 )
     {
         // Rd32 = vextract(Vu32,Rs32)
-        add_reg( ops, REG_R(d5) );
-        add_reg( ops, REG_V(u5) );
-        add_reg( ops, REG_R(s5) );
+        op_reg( ops[0], REG_R(d5) );
+        op_reg( ops[1], REG_V(u5) );
+        op_reg( ops[2], REG_R(s5) );
         return Hex_vextract;
     }
     return 0;
@@ -4001,7 +4001,7 @@ static uint32_t iclass_9_HVX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
 // HMX instructions parsing
 //
 
-static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
+static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &/*flags*/ )
 {
     if( BITS(27:21) != 0b0010000 || BITS(7:6) != 0b11 )
         return 0;
@@ -4010,8 +4010,8 @@ static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
     if( BIT(13) == 0 && t5 == 3 && BITS(5:1) == 0b11111 )
     {
         // bias = mxmem[2](Rs32)
-        add_reg( ops, REG_BIAS );
-        add_mxmem( ops, BIT(0)? MEM_MX : MEM_MX2, REG_R(s5) );
+        op_reg( ops[0], REG_BIAS );
+        op_mxmem( ops[1], BIT(0)? MEM_MX : MEM_MX2, REG_R(s5) );
         return Hex_mov;
     }
     if( BIT(13) == 0 && BIT(5) == 1 )
@@ -4037,8 +4037,8 @@ static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         case 0b11010: ub = 0, suff = MX_DILATE; break;
         default: return 0;
         }
-        add_reg( ops, REG_ACTIVATION, ub? REG_POST_UB : REG_POST_HF );
-        add_mxmem( ops, MEM_MX | suff, REG_R(s5), REG_R(t5) );
+        op_reg( ops[0], REG_ACTIVATION, ub? REG_POST_UB : REG_POST_HF );
+        op_mxmem( ops[1], MEM_MX | suff, REG_R(s5), REG_R(t5) );
         return Hex_mov;
     }
     if( BIT(13) == 1 )
@@ -4097,14 +4097,14 @@ static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops, 
         case 0b111101: dt = REG_POST_C,    suff = MX_DILATE; break;
         default: return 0;
         }
-        add_reg( ops, REG_WEIGHT, dt );
-        add_mxmem( ops, MEM_MX | suff, REG_R(s5), REG_R(t5) );
+        op_reg( ops[0], REG_WEIGHT, dt );
+        op_mxmem( ops[1], MEM_MX | suff, REG_R(s5), REG_R(t5) );
         return Hex_mov;
     }
     return 0;
 }
 
-static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
+static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &/*flags*/ )
 {
     if( BITS(27:21) != 0b0110111 || BITS(7:5) != 0 )
         return 0;
@@ -4113,12 +4113,12 @@ static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops,
     if( BIT(13) == 0 && BIT(4) == 0 )
     {
         // mxmem(Rs32,Rt32):{before|after}[:retain][:cm][:sat}.ub=acc
-        add_mxmem( ops, MEM_MX | MX_UB |
-                        (BIT(0)? MX_CM : 0) |
-                        (BIT(1)? 0 : MX_SAT) |
-                        (BIT(2)? MX_AFTER : MX_BEFORE) |
-                        (BIT(3)? MX_RETAIN : 0), REG_R(s5), REG_R(t5) );
-        add_reg( ops, REG_ACC );
+        op_mxmem( ops[0], MEM_MX | MX_UB |
+                           (BIT(0)? MX_CM : 0) |
+                           (BIT(1)? 0 : MX_SAT) |
+                           (BIT(2)? MX_AFTER : MX_BEFORE) |
+                           (BIT(3)? MX_RETAIN : 0), REG_R(s5), REG_R(t5) );
+        op_reg( ops[1], REG_ACC );
         return Hex_mov;
     }
     if( BIT(13) == 1 && BIT(4) == 0 )
@@ -4130,22 +4130,22 @@ static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops,
             MX_BEFORE | MX_RETAIN, MX_AFTER | MX_POS, MX_AFTER | MX_SAT, MX_AFTER,
             MX_AFTER | MX_RETAIN, MX_AFTER | MX_RETAIN | MX_POS, MX_AFTER | MX_RETAIN | MX_SAT, MX_AFTER | MX_RETAIN,
         };
-        add_mxmem( ops, MEM_MX |
-                        suff[ BITS(3:0) ] |
-                        (BIT(1)? MX_UH : MX_HF),
-                        REG_R(s5), REG_R(t5) );
-        add_reg( ops, REG_ACC, BIT(1)? REG_POST_2x1 : 0 );
+        op_mxmem( ops[0], MEM_MX |
+                           suff[ BITS(3:0) ] |
+                           (BIT(1)? MX_UH : MX_HF),
+                           REG_R(s5), REG_R(t5) );
+        op_reg( ops[1], REG_ACC, BIT(1)? REG_POST_2x1 : 0 );
         return Hex_mov;
     }
     if( BIT(13) == 1 && BIT(4) == 1 && BIT(1) == 1 )
     {
         // mxmem(Rs32,Rt32):{before|after}[:retain][:sat].uh=acc:2x2
-        add_mxmem( ops, MEM_MX | MX_UH |
-                        (BIT(3)? MX_AFTER : MX_BEFORE) |
-                        (BIT(2)? MX_RETAIN : 0) |
-                        (BIT(0)? 0 : MX_SAT),
-                        REG_R(s5), REG_R(t5) );
-        add_reg( ops, REG_ACC, REG_POST_2x2 );
+        op_mxmem( ops[0], MEM_MX | MX_UH |
+                           (BIT(3)? MX_AFTER : MX_BEFORE) |
+                           (BIT(2)? MX_RETAIN : 0) |
+                           (BIT(0)? 0 : MX_SAT),
+                           REG_R(s5), REG_R(t5) );
+        op_reg( ops[1], REG_ACC, REG_POST_2x2 );
         return Hex_mov;
     }
     // rest of instructions
@@ -4156,25 +4156,25 @@ static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops,
         case 0b000:
         case 0b110:
             // mxmem[2](Rs32)=bias
-            add_mxmem( ops, BIT(1)? MEM_MX2 : MEM_MX, REG_R(s5) );
-            add_reg( ops, REG_BIAS );
+            op_mxmem( ops[0], BIT(1)? MEM_MX2 : MEM_MX, REG_R(s5) );
+            op_reg( ops[1], REG_BIAS );
             return Hex_mov;
         case 0b001:
         case 0b011:
             // mxclracc[.hf]
             if( s5 ) return 0;
-            add_reg( ops, REG_ACC, BIT(1)? REG_POST_HF : 0 );
+            op_reg( ops[0], REG_ACC, BIT(1)? REG_POST_HF : 0 );
             return Hex_mxclr;
         case 0b100:
         case 0b101:
             // mxswapacc[.hf]
             if( s5 ) return 0;
-            add_reg( ops, REG_ACC, BIT(0)? REG_POST_HF : 0 );
+            op_reg( ops[0], REG_ACC, BIT(0)? REG_POST_HF : 0 );
             return Hex_mxswap;
         case 0b111:
             // acc=mxshl(acc,#16)
-            add_reg( ops, REG_ACC );
-            add_imm( ops, 16 );
+            op_reg( ops[0], REG_ACC );
+            op_imm( ops[1], 16 );
             return Hex_mxshl;
         }
     }
@@ -4185,20 +4185,20 @@ static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t **ops,
 // DMA instructions parsing
 //
 
-static uint32_t iclass_9_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &/*flags*/ )
+static uint32_t iclass_9_DMA( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &/*flags*/ )
 {
     if( BITS(27:21) == 0b0010000 && BIT(13) == 0 && BITS(11:5) == 0b1000000 )
     {
         // Rd[d]32 = memX_aq(Rs32)
         uint32_t s5 = BITS(20:16), d5 = BITS(4:0);
-        add_reg( ops, REG_R(d5), BIT(12)? REG_DOUBLE : 0 );
-        add_mem_ind( ops, MEM_AQ | (BIT(12)? MEM_D : MEM_W), REG_R(s5), 0 );
+        op_reg( ops[0], REG_R(d5), BIT(12)? REG_DOUBLE : 0 );
+        op_mem_ind( ops[1], MEM_AQ | (BIT(12)? MEM_D : MEM_W), REG_R(s5), 0 );
         return Hex_mov;
     }
     return 0;
 }
 
-static uint32_t iclass_10_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+static uint32_t iclass_10_DMA( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
 {
     if( BIT(13) != 0 ) return 0;
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
@@ -4211,7 +4211,7 @@ static uint32_t iclass_10_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops,
         case 0b011100:
             if( t5 == 0 && d5 == 0 ) {
                 // dmstart(Rs32) / dmresume(Rs32)
-                add_reg( ops, REG_R(s5) );
+                op_reg( ops[0], REG_R(s5) );
                 return BIT(5)? Hex_dmstart : Hex_dmresume;
             }
             break;
@@ -4219,8 +4219,8 @@ static uint32_t iclass_10_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops,
         case 0b011010:
             if( d5 == 0 ) {
                 // dmlink(Rs32,Rt32)
-                add_reg( ops, REG_R(s5) );
-                add_reg( ops, REG_R(t5) );
+                op_reg( ops[0], REG_R(s5) );
+                op_reg( ops[1], REG_R(t5) );
                 return Hex_dmlink;
             }
             break;
@@ -4230,7 +4230,7 @@ static uint32_t iclass_10_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops,
         case 0b100011:
             if( s5 == 0 && t5 == 0 ) {
                 // Rd32 = {dmwait,dmpoll,dmpause}
-                add_reg( ops, REG_R(d5) );
+                op_reg( ops[0], REG_R(d5) );
                 return BITS(6:5) == 1? Hex_dmwait : BITS(6:5) == 2? Hex_dmpoll : Hex_dmpause;
             }
             break;
@@ -4238,8 +4238,8 @@ static uint32_t iclass_10_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops,
         case 0b100101:
             if( t5 == 0 ) {
                 // Rd32 = dmcfgrd(Rs32)
-                add_reg( ops, REG_R(d5) );
-                add_reg( ops, REG_R(s5) );
+                op_reg( ops[0], REG_R(d5) );
+                op_reg( ops[1], REG_R(s5) );
                 return Hex_dmcfgrd;
             }
             break;
@@ -4247,8 +4247,8 @@ static uint32_t iclass_10_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops,
         case 0b100110:
             if( d5 == 0 ) {
                 // dmcfgwr(Rs32,Rt32)
-                add_reg( ops, REG_R(s5) );
-                add_reg( ops, REG_R(t5) );
+                op_reg( ops[0], REG_R(s5) );
+                op_reg( ops[1], REG_R(t5) );
                 return Hex_dmcfgwr;
             }
             break;
@@ -4256,7 +4256,7 @@ static uint32_t iclass_10_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops,
         case 0b100111:
             if( s5 == 0 && BITS(12:9) == 0 ) {
                 // Rd32 = {dmsyncht,dmtlbsynch}
-                add_reg( ops, REG_R(d5) );
+                op_reg( ops[0], REG_R(d5) );
                 return BIT(8)? Hex_dmtlbsynch : Hex_dmsyncht;
             }
             break;
@@ -4265,16 +4265,16 @@ static uint32_t iclass_10_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops,
     else if( (BITS(27:21) & 0b1111101) == 0b0000101 && (BITS(7:0) & 0b11011111) == 0b00001000 )
     {
         // memX_rl(Rs32):{at,st} = Rt[t]32
-        add_mem_ind( ops, MEM_RL |
-                          (BIT(22)? MEM_D : MEM_W) |
-                          (BIT(5)? MEM_ST : MEM_AT), REG_R(s5), 0 );
-        add_reg( ops, REG_R(t5), BIT(22)? REG_DOUBLE : 0 );
+        op_mem_ind( ops[0], MEM_RL |
+                            (BIT(22)? MEM_D : MEM_W) |
+                            (BIT(5)? MEM_ST : MEM_AT), REG_R(s5), 0 );
+        op_reg( ops[1], REG_R(t5), BIT(22)? REG_DOUBLE : 0 );
         return Hex_mov;
     }
     else if( BITS(27:21) == 0b0000111 && t5 == 0 && (BITS(7:0) & 0b11011111) == 0b00001100 )
     {
         // release(Rs32):{at,st}
-        add_reg( ops, REG_R(s5) );
+        op_reg( ops[0], REG_R(s5) );
         flags = BIT(5)? IPO_ST : IPO_AT;
         return Hex_release;
     }
@@ -4283,7 +4283,7 @@ static uint32_t iclass_10_DMA( uint32_t word, uint64_t /*extender*/, op_t **ops,
 
 static void simplify( insn_t &insn )
 {
-    op_t *ops = insn_ops( insn );
+    op_t *ops = insn.ops;
 
     switch( insn.itype )
     {
@@ -4406,65 +4406,65 @@ static bool decode_single( insn_t &insn, uint32_t word, uint64_t extender )
     switch( iclass )
     {
     case 1:
-        itype = iclass_1_CJ( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_1_HVX( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_1_ZReg( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_1_HVX_v68( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_1_HVX_v69( word, extender, &ops, flags );
+        itype = iclass_1_CJ( word, extender, ops, flags );
+        if( !itype ) itype = iclass_1_HVX( word, extender, ops, flags );
+        if( !itype ) itype = iclass_1_ZReg( word, extender, ops, flags );
+        if( !itype ) itype = iclass_1_HVX_v68( word, extender, ops, flags );
+        if( !itype ) itype = iclass_1_HVX_v69( word, extender, ops, flags );
         break;
     case 2:
-        itype = iclass_2_NCJ( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_2_HVX( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_2_ZReg( word, extender, &ops, flags );
+        itype = iclass_2_NCJ( word, extender, ops, flags );
+        if( !itype ) itype = iclass_2_HVX( word, extender, ops, flags );
+        if( !itype ) itype = iclass_2_ZReg( word, extender, ops, flags );
         break;
     case 3:
-        itype = iclass_3_V4LDST( word, extender, &ops, flags );
+        itype = iclass_3_V4LDST( word, extender, ops, flags );
         break;
     case 4:
-        itype = iclass_4_V2LDST( word, extender, &ops, flags );
+        itype = iclass_4_V2LDST( word, extender, ops, flags );
         break;
     case 5:
-        itype = iclass_5_J( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_5_SYS( word, extender, &ops, flags );
+        itype = iclass_5_J( word, extender, ops, flags );
+        if( !itype ) itype = iclass_5_SYS( word, extender, ops, flags );
         break;
     case 6:
-        itype = iclass_6_CR( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_6_SYS( word, extender, &ops, flags );
+        itype = iclass_6_CR( word, extender, ops, flags );
+        if( !itype ) itype = iclass_6_SYS( word, extender, ops, flags );
         break;
     case 7:
-        itype = iclass_7_ALU2op( word, extender, &ops, flags );
+        itype = iclass_7_ALU2op( word, extender, ops, flags );
         break;
     case 8:
-        itype = iclass_8_S2op( word, extender, &ops, flags );
+        itype = iclass_8_S2op( word, extender, ops, flags );
         break;
     case 9:
-        itype = iclass_9_LD( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_9_LD_EXT( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_9_HVX( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_9_HMX( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_9_DMA( word, extender, &ops, flags );
+        itype = iclass_9_LD( word, extender, ops, flags );
+        if( !itype ) itype = iclass_9_LD_EXT( word, extender, ops, flags );
+        if( !itype ) itype = iclass_9_HVX( word, extender, ops, flags );
+        if( !itype ) itype = iclass_9_HMX( word, extender, ops, flags );
+        if( !itype ) itype = iclass_9_DMA( word, extender, ops, flags );
         break;
     case 10:
-        itype = iclass_10_ST( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_10_ST_EXT( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_10_SYS( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_10_HMX( word, extender, &ops, flags );
-        if( !itype ) itype = iclass_10_DMA( word, extender, &ops, flags );
+        itype = iclass_10_ST( word, extender, ops, flags );
+        if( !itype ) itype = iclass_10_ST_EXT( word, extender, ops, flags );
+        if( !itype ) itype = iclass_10_SYS( word, extender, ops, flags );
+        if( !itype ) itype = iclass_10_HMX( word, extender, ops, flags );
+        if( !itype ) itype = iclass_10_DMA( word, extender, ops, flags );
         break;
     case 11:
-        itype = iclass_11_ADDI( word, extender, &ops, flags );
+        itype = iclass_11_ADDI( word, extender, ops, flags );
         break;
     case 12:
-        itype = iclass_12_S3op( word, extender, &ops, flags );
+        itype = iclass_12_S3op( word, extender, ops, flags );
         break;
     case 13:
-        itype = iclass_13_ALU64( word, extender, &ops, flags );
+        itype = iclass_13_ALU64( word, extender, ops, flags );
         break;
     case 14:
-        itype = iclass_14_M( word, extender, &ops, flags );
+        itype = iclass_14_M( word, extender, ops, flags );
         break;
     case 15:
-        itype = iclass_15_ALU3op( word, extender, &ops, flags );
+        itype = iclass_15_ALU3op( word, extender, ops, flags );
         break;
     }
 
@@ -4486,12 +4486,12 @@ static __inline uint8_t duplex_dreg( uint32_t v )
     return REG_R( 2*v + (v < 4? 0 : 8) );
 };
 
-static uint8_t duplex_L1( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t& )
+static uint8_t duplex_L1( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t& )
 {
     // Rd16 = mem[ub|w](Rs16+#Ii)
     bool memub = BITS(12:12) != 0;
-    add_reg( ops, gen_sub_reg( BITS(3:0) ) );
-    add_mem_ind( ops,
+    op_reg( ops[0], gen_sub_reg( BITS(3:0) ) );
+    op_mem_ind( ops[1],
         memub? MEM_UB : MEM_W,
         gen_sub_reg( BITS(7:4) ),
         BITS(11:8) << (memub? 0 : 2)
@@ -4499,27 +4499,27 @@ static uint8_t duplex_L1( uint32_t word, uint64_t /*extender*/, op_t **ops, uint
     return Hex_mov;
 }
 
-static uint8_t duplex_S1( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t& )
+static uint8_t duplex_S1( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t& )
 {
     // mem[b|w](Rs16+#Ii) = Rt16
     bool memb = BITS(12:12) != 0;
-    add_mem_ind( ops,
+    op_mem_ind( ops[0],
         memb? MEM_B : MEM_W,
         gen_sub_reg( BITS(7:4) ),
         BITS(11:8) << (memb? 0 : 2)
     );
-    add_reg( ops, gen_sub_reg( BITS(3:0) ) );
+    op_reg( ops[1], gen_sub_reg( BITS(3:0) ) );
     return Hex_mov;
 }
 
-static uint8_t duplex_L2( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t &flags )
+static uint8_t duplex_L2( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
 {
     uint32_t target = BITS(12:11);
     if( target != 3 )
     {
         // Rd16 = mem[h|uh|b](Rs16+#Ii)
-        add_reg( ops, gen_sub_reg( BITS(3:0) ) );
-        add_mem_ind( ops,
+        op_reg( ops[0], gen_sub_reg( BITS(3:0) ) );
+        op_mem_ind( ops[1],
             target == 0? MEM_H : target == 1? MEM_UH : MEM_B,
             gen_sub_reg( BITS(7:4) ),
             BITS(10:8) << (target == 2? 0 : 1)
@@ -4529,8 +4529,8 @@ static uint8_t duplex_L2( uint32_t word, uint64_t /*extender*/, op_t **ops, uint
     if( BITS(10:9) == 0b10 )
     {
         // Rd16 = memw(r29+#Ii)
-        add_reg( ops, gen_sub_reg( BITS(3:0) ) );
-        add_mem_ind( ops,
+        op_reg( ops[0], gen_sub_reg( BITS(3:0) ) );
+        op_mem_ind( ops[1],
             MEM_W,
             REG_SP,
             BITS(8:4) << 2
@@ -4540,8 +4540,8 @@ static uint8_t duplex_L2( uint32_t word, uint64_t /*extender*/, op_t **ops, uint
     if( BITS(10:8) == 0b110 )
     {
         // Rdd8 = memd(r29+#Ii)
-        add_reg( ops, duplex_dreg( BITS(2:0) ), REG_DOUBLE );
-        add_mem_ind( ops,
+        op_reg( ops[0], duplex_dreg( BITS(2:0) ), REG_DOUBLE );
+        op_mem_ind( ops[1],
             MEM_D,
             REG_SP,
             BITS(7:3) << 3
@@ -4555,14 +4555,14 @@ static uint8_t duplex_L2( uint32_t word, uint64_t /*extender*/, op_t **ops, uint
         // if ([!]p0[.new]) dealloc_return[:nt]
         uint32_t reg_flags = ((word & 1)? REG_PRE_NOT : 0) |
                              ((word & 2)? REG_POST_NEW : 0);
-        add_reg( ops, REG_P0, reg_flags );
+        op_reg( ops[PRED_A], REG_P0, reg_flags );
         flags = PRED_REG | ((word & 2)? JMP_NT : 0);
         return Hex_return;
     }
     if( word == 0b1111111000000 )
     {
         // jumpr r31
-        add_reg( ops, REG_LR );
+        op_reg( ops[0], REG_LR );
         return Hex_jumpr;
     }
     if( BITS(12:2) == 0b11111110001 )
@@ -4570,71 +4570,71 @@ static uint8_t duplex_L2( uint32_t word, uint64_t /*extender*/, op_t **ops, uint
         // if ([!]p0[.new]) jumpr[:nt] r31
         uint32_t reg_flags = ((word & 1)? REG_PRE_NOT : 0) |
                              ((word & 2)? REG_POST_NEW : 0);
-        add_reg( ops, REG_P0, reg_flags );
-        add_reg( ops, REG_LR );
+        op_reg( ops[PRED_A], REG_P0, reg_flags );
+        op_reg( ops[0], REG_LR );
         flags = PRED_REG | ((word & 2)? JMP_NT : 0);
         return Hex_jumpr;
     }
     return 0;
 }
 
-static uint8_t duplex_S2( uint32_t word, uint64_t /*extender*/, op_t **ops, uint32_t& )
+static uint8_t duplex_S2( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t& )
 {
     if( BITS(12:11) == 0b00 )
     {
         // memh(Rs16+#Ii) = Rt16
-        add_mem_ind( ops,
+        op_mem_ind( ops[0],
             MEM_H,
             gen_sub_reg( BITS(7:4) ),
             BITS(10:8) << 1
         );
-        add_reg( ops, gen_sub_reg( BITS(3:0) ) );
+        op_reg( ops[1], gen_sub_reg( BITS(3:0) ) );
         return Hex_mov;
     }
     if( BITS(12:9) == 0b0100 )
     {
         // memw(r29+#Ii) = Rt16
-        add_mem_ind( ops,
+        op_mem_ind( ops[0],
             MEM_W,
             REG_SP,
             BITS(8:4) << 2
         );
-        add_reg( ops, gen_sub_reg( BITS(3:0) ) );
+        op_reg( ops[1], gen_sub_reg( BITS(3:0) ) );
         return Hex_mov;
     }
     if( BITS(12:9) == 0b0101 )
     {
         // memd(r29+#Ii) = Rtt8
-        add_mem_ind( ops,
+        op_mem_ind( ops[0],
             MEM_D,
             REG_SP,
             SBITS(8:3) << 3
         );
-        add_reg( ops, duplex_dreg( BITS(2:0) ), REG_DOUBLE );
+        op_reg( ops[1], duplex_dreg( BITS(2:0) ), REG_DOUBLE );
         return Hex_mov;
     }
     if( BITS(12:10) == 0b100 )
     {
         // mem[b|w](Rs16+#Ii) = #[0|1]
         bool memb = BIT(9) != 0;
-        add_mem_ind( ops,
+        op_mem_ind( ops[0],
             memb? MEM_B : MEM_W,
             gen_sub_reg( BITS(7:4) ),
             BITS(3:0) << (memb? 0 : 2)
         );
-        add_imm( ops, BIT(8) );
+        op_imm( ops[1], BIT(8) );
         return Hex_mov;
     }
     if( BITS(12:9) == 0b1110 && BITS(3:0) == 0b0000 )
     {
         // allocframe(#Ii)
-        add_imm( ops, BITS(8:4) << 3 );
+        op_imm( ops[0], BITS(8:4) << 3 );
         return Hex_allocframe;
     }
     return 0;
 }
 
-static uint8_t duplex_A( uint32_t word, uint64_t extender, op_t **ops, uint32_t &flags )
+static uint8_t duplex_A( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     uint32_t s4 = BITS(7:4), d4 = BITS(3:0);
     bool extended = extender != 0;
@@ -4643,38 +4643,38 @@ static uint8_t duplex_A( uint32_t word, uint64_t extender, op_t **ops, uint32_t 
     {
         // Rx16 = add(Rx16in,#Ii) [EXT]
         uint32_t rx = gen_sub_reg( d4 );
-        add_reg( ops, rx );
-        add_reg( ops, rx );
-        add_imm( ops, EXTEND( SBITS(10:4), 0 ), true, extended );
+        op_reg( ops[0], rx );
+        op_reg( ops[1], rx );
+        op_imm( ops[2], EXTEND( SBITS(10:4), 0 ), true, extended );
         return Hex_add;
     }
     if( BITS(12:10) == 0b010 )
     {
         // Rd16 = #Ii [EXT]
-        add_reg( ops, gen_sub_reg( d4 ) );
-        add_imm( ops, EXTEND( BITS(9:4), 0 ), false, extended );
+        op_reg( ops[0], gen_sub_reg( d4 ) );
+        op_imm( ops[1], EXTEND( BITS(9:4), 0 ), false, extended );
         return Hex_mov;
     }
     if( BITS(12:10) == 0b011 )
     {
         // Rd16 = add(r29,#Ii)
-        add_reg( ops, gen_sub_reg( d4 ) );
-        add_reg( ops, REG_SP );
-        add_imm( ops, BITS(9:4) << 2 );
+        op_reg( ops[0], gen_sub_reg( d4 ) );
+        op_reg( ops[1], REG_SP );
+        op_imm( ops[2], BITS(9:4) << 2 );
         return Hex_add;
     }
     if( BITS(12:11) == 0b10 )
     {
-        add_reg( ops, gen_sub_reg( d4 ) );
-        add_reg( ops, gen_sub_reg( s4 ) );
+        op_reg( ops[0], gen_sub_reg( d4 ) );
+        op_reg( ops[1], gen_sub_reg( s4 ) );
         switch( BITS(10:8) )
         {
         case 0: return Hex_mov;  // Rd16 = Rs16
-        case 1: add_imm( ops, 1 );
+        case 1: op_imm( ops[2], 1 );
                 return Hex_add;  // Rd16 = add(Rs16,#1)
-        case 2: add_imm( ops, 1 );
+        case 2: op_imm( ops[2], 1 );
                 return Hex_and;  // Rd16 = and(Rs16,#1)
-        case 3: add_imm( ops, -1, true );
+        case 3: op_imm( ops[2], -1, true );
                 return Hex_add;  // Rd16 = add(Rs16,#n1)
         case 4: return Hex_sxth; // Rd16 = sxth(Rs16)
         case 5: return Hex_sxtb; // Rd16 = sxtb(Rs16)
@@ -4686,67 +4686,67 @@ static uint8_t duplex_A( uint32_t word, uint64_t extender, op_t **ops, uint32_t 
     {
         // Rx16 = add(Rx16in,Rs16)
         uint32_t rx = gen_sub_reg( d4 );
-        add_reg( ops, rx );
-        add_reg( ops, rx );
-        add_reg( ops, gen_sub_reg( s4 ) );
+        op_reg( ops[0], rx );
+        op_reg( ops[1], rx );
+        op_reg( ops[2], gen_sub_reg( s4 ) );
         return Hex_add;
     }
     if( BITS(12:8) == 0b11001 && BITS(3:2) == 0b00 )
     {
         // p0 = cmp.eq(Rs16,#Ii)
-        add_reg( ops, REG_P0 );
-        add_reg( ops, gen_sub_reg( s4 ) );
-        add_imm( ops, d4 );
+        op_reg( ops[0], REG_P0 );
+        op_reg( ops[1], gen_sub_reg( s4 ) );
+        op_imm( ops[2], d4 );
         flags = CMP_EQ;
         return Hex_cmp;
     }
     if( BITS(12:4) == 0b110100000 )
     {
         // Rd16 = #n1
-        add_reg( ops, gen_sub_reg( d4 ) );
-        add_imm( ops, -1, true );
+        op_reg( ops[0], gen_sub_reg( d4 ) );
+        op_imm( ops[1], -1, true );
         return Hex_mov;
     }
     if( BITS(12:6) == 0b1101001 )
     {
         // if ([!]p0[.new]) Rd16 = #0
-        add_reg( ops, REG_P0, (BIT(4)? REG_PRE_NOT : 0) |
-                              (BIT(5)? 0 : REG_POST_NEW) );
-        add_reg( ops, gen_sub_reg( d4 ) );
-        add_imm( ops, 0 );
+        op_reg( ops[PRED_A], REG_P0, (BIT(4)? REG_PRE_NOT : 0) |
+                                     (BIT(5)? 0 : REG_POST_NEW) );
+        op_reg( ops[0], gen_sub_reg( d4 ) );
+        op_imm( ops[1], 0 );
         flags = PRED_REG;
         return Hex_mov;
     }
     if( BITS(12:7) == 0b111000 )
     {
         // Rdd8 = combine(#i,#Ii)
-        add_reg( ops, duplex_dreg( BITS(2:0) ), REG_DOUBLE );
+        op_reg( ops[0], duplex_dreg( BITS(2:0) ), REG_DOUBLE );
         if( BITS(4:3) == 0 ) {
-            add_imm( ops, BITS(6:5) );
+            op_imm( ops[1], BITS(6:5) );
             return Hex_mov; // simplify
         }
-        add_imm( ops, BITS(4:3) );
-        add_imm( ops, BITS(6:5) );
+        op_imm( ops[1], BITS(4:3) );
+        op_imm( ops[2], BITS(6:5) );
         return Hex_combine;
     }
     if( BITS(12:8) == 0b11101 )
     {
         // Rdd8 = combine(Rs16,#0)
         uint32_t rs = gen_sub_reg( BITS(7:4) );
-        add_reg( ops, duplex_dreg( BITS(2:0) ), REG_DOUBLE );
+        op_reg( ops[0], duplex_dreg( BITS(2:0) ), REG_DOUBLE );
         if( BIT(3) == 0 ) {
-            add_imm( ops, 0 );
-            add_reg( ops, rs );
+            op_imm( ops[1], 0 );
+            op_reg( ops[2], rs );
         } else {
-            add_reg( ops, rs );
-            add_imm( ops, 0 );
+            op_reg( ops[1], rs );
+            op_imm( ops[2], 0 );
         }
         return Hex_combine;
     }
     return 0;
 }
 
-typedef uint8_t (*duplex_parser)( uint32_t, uint64_t, op_t**, uint32_t& );
+typedef uint8_t (*duplex_parser)( uint32_t, uint64_t, op_t*, uint32_t& );
 static const duplex_parser dp[15][2] = {
     // class        low       high
     /*  0*/ { duplex_L1, duplex_L1 },
@@ -4778,12 +4778,12 @@ static bool decode_duplex( insn_t &insn, uint32_t word, uint64_t extender )
     if( (insn.ea & 2) == 0 )
     {
         // parse high sub-instruction
-        itype = dp[dclass][1]( BITS(28:16), extender, &ops, flags );
+        itype = dp[dclass][1]( BITS(28:16), extender, ops, flags );
     }
     else
     {
         // parse low sub-instruction (w/o extender)
-        itype = dp[dclass][0]( BITS(12:0), 0, &ops, flags );
+        itype = dp[dclass][0]( BITS(12:0), 0, ops, flags );
     }
 
     if( !itype ) return false;

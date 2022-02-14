@@ -391,7 +391,7 @@ static void hex_out_op_line( outctx_t &ctx, const char *str, uint32_t op_idx )
     }
 }
 
-static uint32_t hex_out_predicate( outctx_t &ctx, uint32_t ptype, uint32_t op_idx )
+static void hex_out_predicate( outctx_t &ctx, uint32_t ptype )
 {
     ctx.out_line( S_INSN("if")S_SYMBOL(" (") );
     if( ptype >= PRED_NE ) {
@@ -409,18 +409,16 @@ static uint32_t hex_out_predicate( outctx_t &ctx, uint32_t ptype, uint32_t op_id
     /* EQ0 */ "%0" S_SYMBOL(" == ") "%1",
     /* LE0 */ "%0" S_SYMBOL(" <= ") "%1",
     };
-    hex_out_op_line( ctx, pred[ptype - 1], op_idx );
+    hex_out_op_line( ctx, pred[ptype - 1], PRED_A );
     ctx.out_line( S_SYMBOL(") ") );
-    return op_idx + (ptype == PRED_REG? 1 : 2);
 }
 
 static void hex_out_insn( outctx_t &ctx )
 {
     uint32_t flags = insn_flags( ctx.insn );
-    uint32_t op_idx = 0;
     // output predicate
     if( (flags & PRED_MASK) != PRED_NONE )
-        op_idx = hex_out_predicate( ctx, flags & PRED_MASK, op_idx );
+        hex_out_predicate( ctx, flags & PRED_MASK );
 
     // output instruction body
     const char *tmpl = get_insn_template( ctx.insn.itype );
@@ -430,7 +428,7 @@ static void hex_out_insn( outctx_t &ctx )
         if( c == '%' ) {
             c = *tmpl++;
             if( '0' <= c && c <= '9' ) {
-                ctx.out_one_operand( op_idx + c - '0' );
+                ctx.out_one_operand( c - '0' );
                 if( c > maxop ) maxop = c;
             }
             else if( c == 's' && (flags & SZ_MASK) != SZ_NONE ) {

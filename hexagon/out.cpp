@@ -422,14 +422,13 @@ static void hex_out_insn( outctx_t &ctx )
 
     // output instruction body
     const char *tmpl = get_insn_template( ctx.insn.itype );
-    uint32_t maxop = 0, color = 0;
+    uint32_t color = 0;
     while( char c = *tmpl++ )
     {
         if( c == '%' ) {
             c = *tmpl++;
             if( '0' <= c && c <= '9' ) {
                 ctx.out_one_operand( c - '0' );
-                if( c > maxop ) maxop = c;
             }
             else if( c == 's' && (flags & SZ_MASK) != SZ_NONE ) {
                 static const char *sz[8] = { "", "b", "h", "w", "d", "ub", "uh", "uw" };

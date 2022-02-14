@@ -92,6 +92,14 @@ static uint32_t get_mask_R6( uint32_t word )
     return 0;
 }
 
+static uint32_t get_mask_R7( uint32_t word )
+{
+    if( (word & 0xF800E000) == 0x20002000 ) return 0x07F00000; // duplex Rx16 = add(Rx16in,#Ii) (7 bits)
+
+    warning( "unrecognized instruction for R_HEX_7_X relocation: 0x%08X\n", word );
+    return 0;
+}
+
 static uint32_t get_mask_R8( uint32_t word )
 {
     if( (word & 0x1800c000) == 0x00000000 ) return 0x07f00000; // duplex Rx16 = add(Rx16in,#Ii) (7 bits)
@@ -272,6 +280,9 @@ static const char* proc_handle_reloc(
         break;
     case R_HEX_8_X:
         value = rel_data.Sadd, mask = get_mask_R8( word );
+        break;
+    case R_HEX_7_X:
+        value = rel_data.Sadd, mask = get_mask_R7( word );
         break;
     case R_HEX_6_X:
         value = rel_data.Sadd, mask = get_mask_R6( word );

@@ -224,10 +224,6 @@ static ssize_t idaapi notify( void*, int notification_code, va_list va )
         hex_get_cc_regs( cc, *regs );
         return 1;
     }
-    case processor_t::ev_get_stkarg_offset: {
-        // offset from SP to the first stack argument
-        return 0;
-    }
     case processor_t::ev_calc_arglocs: {
         auto fti = va_arg( va, func_type_data_t* );
         return hex_calc_arglocs( *fti )? 1 : -1;

@@ -56,6 +56,7 @@ static const char* proc_describe_flag_bit( proc_def_t* /*self*/, uint32 *e_flags
     case EF_HEXAGON_MACH_V68:  opts = "Hexagon V68"; break;
     case EF_HEXAGON_MACH_V69:  opts = "Hexagon V69"; break;
     case EF_HEXAGON_MACH_V71:  opts = "Hexagon V71"; break;
+    case EF_HEXAGON_MACH_V73:  opts = "Hexagon V73"; break;
     }
     // clear used flags to prevent infinite loop
     if( opts ) *e_flags = 0;

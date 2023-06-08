@@ -32,6 +32,7 @@ enum {
     o_mem_inc_brev,                     // memXX(Rx++Mu:brev)
     o_mem_locked,                       // memXX_locked(Rs[,Pd])
     o_mxmem,                            // mxmem[2](Rs[,Rt])
+    o_acc,                              // acc[(Rs)]
     o_reg_off,                          // Rs + #u14
 };
 
@@ -58,6 +59,7 @@ enum {
     REG_BIAS,                           // HMX virtual register
     REG_ACTIVATION,                     // HMX virtual register
     REG_WEIGHT,                         // HMX virtual register
+    REG_CVT,                            // HMX virtual register
     // user mode control registers
     REG_C0,
     REG_M0          = REG_C(6),         // modifier registers
@@ -94,16 +96,17 @@ enum {
     REG_POST_UW     = (12 << 4),        // .uw
     REG_POST_SF     = (13 << 4),        // .sf
     REG_POST_HF     = (14 << 4),        // .hf
-    REG_POST_Q32    = (15 << 4),        // .qf32
-    REG_POST_Q16    = (16 << 4),        // .qf16
-    REG_POST_N      = (17 << 4),        // .n (nibble)
-    REG_POST_C      = (18 << 4),        // .c (crumb)
-    REG_POST_SC     = (19 << 4),        // .sc
-    REG_POST_SM     = (20 << 4),        // .sm
-    REG_POST_UBIT   = (21 << 4),        // .ubit
-    REG_POST_SBIT   = (22 << 4),        // .sbit
-    REG_POST_2x1    = (23 << 4),        // :2x1
-    REG_POST_2x2    = (24 << 4),        // :2x2
+    REG_POST_BF     = (15 << 4),        // .bf
+    REG_POST_Q32    = (16 << 4),        // .qf32
+    REG_POST_Q16    = (17 << 4),        // .qf16
+    REG_POST_N      = (18 << 4),        // .n (nibble)
+    REG_POST_C      = (19 << 4),        // .c (crumb)
+    REG_POST_SC     = (20 << 4),        // .sc
+    REG_POST_SM     = (21 << 4),        // .sm
+    REG_POST_UBIT   = (22 << 4),        // .ubit
+    REG_POST_SBIT   = (23 << 4),        // .sbit
+    REG_POST_2x1    = (24 << 4),        // :2x1
+    REG_POST_2x2    = (25 << 4),        // :2x2
     REG_POST_MASK   = (31 << 4),
     REG_POST_SHIFT  = 4,
     REG_POST_INC    = (1  << 9),         // ...++
@@ -143,20 +146,30 @@ enum {
     MEM_SUFFIX_SHIFT= 7,
     MEM_IMM_EXT     = 0x200,
     // mxmem suffixes
-    MX_SINGLE       = 1 << 10,          // :single
-    MX_DROP         = 2 << 10,          // :drop
-    MX_DEEP         = 3 << 10,          // :deep
-    MX_BEFORE       = 4 << 10,          // :before
-    MX_AFTER        = 5 << 10,          // :after
-    MX_ABOVE        = 6 << 10,          // :above
-    MX_DILATE       = 7 << 10,          // :dilate
-    MX_RETAIN       = 1 << 13,          // :retain
-    MX_CM           = 1 << 14,          // :cm
-    MX_POS          = 1 << 15,          // :pos
-    MX_SAT          = 2 << 15,          // :sat
-    MX_UB           = 1 << 17,          // .ub
-    MX_UH           = 2 << 17,          // .uh
-    MX_HF           = 3 << 17,          // .hf
+    MX_2X           = 1 << 10,          // :2x
+    MX_SINGLE       = 1 << 11,          // :single
+    MX_DROP         = 2 << 11,          // :drop
+    MX_DEEP         = 3 << 11,          // :deep
+    MX_BEFORE       = 4 << 11,          // :before
+    MX_AFTER        = 5 << 11,          // :after
+    MX_ABOVE        = 6 << 11,          // :above
+    MX_DILATE       = 7 << 11,          // :dilate
+    MX_RETAIN       = 1 << 14,          // :retain
+    MX_CM           = 1 << 15,          // :cm
+    MX_2X2          = 2 << 15,          // :2x2
+    MX_POS          = 1 << 17,          // :pos
+    MX_SAT          = 2 << 17,          // :sat
+    MX_UB           = 1 << 19,          // .ub
+    MX_UH           = 2 << 19,          // .uh
+    MX_HF           = 3 << 19,          // .hf
+};
+
+enum {
+    // acc suffixes
+    ACC_2X1         = 1 << 0,           // :2x1
+    ACC_2X2         = 2 << 0,           // :2x2
+    ACC_SC0         = 3 << 0,           // :sc0
+    ACC_SC1         = 4 << 0,           // :sc1
 };
 
 static __inline uint32_t mem_op_type( const op_t &op )
@@ -426,8 +439,10 @@ enum {
     Hex_hintjr,                             // hintjr(%0)
     Hex_call,                               // call %0
     Hex_callr,                              // callr %0
+    Hex_callrh,                             // callrh %0
     Hex_jump,                               // jump%t %0
     Hex_jumpr,                              // jumpr%t %0
+    Hex_jumprh,                             // jumprh %0
     Hex_cmp_jump,                           // %0 = cmp%c(%1,%2); if (%3) jump%t %4
     Hex_set_jump,                           // %0 = %1; jump %2
     Hex_tstbit_jump,                        // %0 = tstbit(%1,%2); if (%3) jump%t %4
@@ -515,6 +530,7 @@ enum {
     Hex_tlbr,                               // %0 = tlbr(%1)
     Hex_tlbunlock,                          // tlbunlock
     Hex_tlbw,                               // tlbw(%0,%1)
+    Hex_unpause,                            // unpause
     Hex_wait,                               // wait(%0)
     // multiplication
     Hex_cmpy,                               // %0 = cmpy(%1,%2)

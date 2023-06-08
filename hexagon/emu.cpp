@@ -11,7 +11,8 @@ static bool hex_is_switch( const insn_t &insn, switch_info_t *si );
 static bool is_ret_or_jump( const insn_t &insn )
 {
     // returns true if it's an unconditional jump or return
-    return (insn.itype == Hex_jump || insn.itype == Hex_jumpr || insn.itype == Hex_set_jump ||
+    return (insn.itype == Hex_jump || insn.itype == Hex_jumpr ||
+            insn.itype == Hex_jumprh || insn.itype == Hex_set_jump ||
             insn.itype == Hex_return_raw || insn.itype == Hex_return) &&
             insn_predicate( insn ) == 0;
 }
@@ -196,7 +197,8 @@ ssize_t emu( const insn_t &insn )
 bool hex_is_call_insn( const insn_t &insn )
 {
     return insn.itype == Hex_call ||
-           insn.itype == Hex_callr;
+           insn.itype == Hex_callr ||
+           insn.itype == Hex_callrh;
 }
 
 bool hex_is_ret_insn( const insn_t &insn, bool strict )
@@ -211,7 +213,7 @@ bool hex_is_ret_insn( const insn_t &insn, bool strict )
         return false;
     if( insn.itype == Hex_return_raw ||
         insn.itype == Hex_return ||
-        insn.itype == Hex_jumpr && insn.ops[0].is_reg( REG_LR ) )
+        (insn.itype == Hex_jumpr || insn.itype == Hex_jumprh) && insn.ops[0].is_reg( REG_LR ) )
         return true;
     return false;
 }
@@ -429,8 +431,8 @@ static bool insn_modifies_op0( uint32_t itype )
     // returns true if instruction writes to %0
     // NB: regenerate if instructions or their order changes!
     static const uint32_t mod[] = {
-        0xfffffffe, 0xbf7fffff, 0xffffffff, 0x000539c1, 0x022d0808, 0xf1c004c0, 0xffffffff, 0xffffffff,
-        0xffffffff, 0xffffffff, 0x733fffff, 0xe7ffffff, 0xffffffff, 0xfe0ffff9,
+        0xfffffffe, 0xbf7fffff, 0xffffffff, 0x0014e701, 0x08b42020, 0x87001300, 0xffffffff, 0xffffffff,
+        0xffffffff, 0xffffffff, 0x99ffffff, 0x3ffffffb, 0xffffffff, 0xf07fffcf,
     };
     assert( itype < _countof(mod) * 32 );
     return (mod[ itype >> 5 ] >> (itype & 31)) & 1;
@@ -444,7 +446,7 @@ static int spoils( const insn_t &insn, uint32_t reg1, uint32_t reg2 = ~0u )
     // checks if instruction modifies either reg1 or reg2
     // returns: 0 - doesn't; 1 - does; 2 - modifies all registers (i.e. function call)
     if( insn.ea != s_call_ea &&
-        (insn.itype == Hex_call || insn.itype == Hex_callr) &&
+        hex_is_call_insn( insn ) &&
         insn_predicate( insn ) == 0 )
         return 2;
 

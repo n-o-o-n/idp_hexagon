@@ -2,7 +2,7 @@ Hexagon Processor Module
 ========================
 This is [Hexagon](https://developer.qualcomm.com/software/hexagon-dsp-sdk/dsp-processor) (aka QDSP6) processor module for  [IDA Pro](https://www.hex-rays.com/products/ida/) disassembler.
 Features:
- * Supports all Hexagon versions: V4, V5, V55, V60, V61, V62, V65, V66, V67, V67t, V68, V69, V71
+ * Supports all Hexagon versions: V4, V5, V55, V60, V61, V62, V65, V66, V67, V67t, V68, V69, V71, V73
  * Supports Hexagon Vector Extensions (HVX), audio extensions
  * Supports Hexagon Matrix Extensions (HMX), V66 NN extensions
  * Supports all known instructions, including undocumented ones

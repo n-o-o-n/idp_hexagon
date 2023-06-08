@@ -108,8 +108,10 @@ static const char *const insn_template[] = {
     "hintjr(%0)",                           // Hex_hintjr
     "call %0",                              // Hex_call
     "callr %0",                             // Hex_callr
+    "callrh %0",                            // Hex_callrh
     "jump%t %0",                            // Hex_jump
     "jumpr%t %0",                           // Hex_jumpr
+    "jumprh %0",                            // Hex_jumprh
     "%0=cmp%c(%1, %2);if (%3) jump%t %4",   // Hex_cmp_jump
     "%0=%1;jump %2",                        // Hex_set_jump
     "%0=tstbit(%1, %2);if (%3) jump%t %4",  // Hex_tstbit_jump
@@ -197,6 +199,7 @@ static const char *const insn_template[] = {
     "%0=tlbr(%1)",                          // Hex_tlbr
     "tlbunlock",                            // Hex_tlbunlock
     "tlbw(%0, %1)",                         // Hex_tlbw
+    "unpause",                              // Hex_unpause
     "wait(%0)",                             // Hex_wait
     // multiplication
     "%0=cmpy(%1, %2)",                      // Hex_cmpy

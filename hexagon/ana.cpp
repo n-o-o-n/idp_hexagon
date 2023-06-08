@@ -299,6 +299,15 @@ static void op_mxmem( op_t &op, uint32_t type, uint32_t rs, uint32_t rt = 0xFF )
     op.reg = (rs << 8) | rt;
 }
 
+static void op_acc( op_t &op, uint32_t type, uint32_t rs = 0xFF )
+{
+    // acc[(Rs)][:...]
+    op.type = o_acc;
+    op.specval = type;
+    op.dtype = dt_byte; // doesn't matter
+    op.reg = rs;
+}
+
 static void op_pcrel( op_t &op, int32_t offset )
 {
     // a PC-relative offset
@@ -610,13 +619,22 @@ static uint32_t iclass_5_J( uint32_t word, uint64_t extender, op_t *ops, uint32_
     switch( code1 )
     {
     case 0b000:
-        if( code2 == 0b0101 && BITS(13:0) == 0 )
+        if( BITS(7:0) != 0 )
+            break;
+
+        if( code2 == 0b0101 && BITS(13:8) == 0 )
         {
             // callr Rs32
             op_reg( ops[0], rs32 );
             return Hex_callr;
         }
-        else if( BITS(24:22) == 0b100 && BITS(13:10) == 0 && BITS(7:0) == 0 )
+        else if( code2 == 0b0110 && BITS(13:8) == 0 )
+        {
+            // callrh Rs32
+            op_reg( ops[0], rs32 );
+            return Hex_callrh;
+        }
+        else if( BITS(24:22) == 0b100 && BITS(13:10) == 0 )
         {
             // if ([!]Pu4) callr Rs32
             op_reg( ops[PRED_A], pu4, BIT(21)? REG_PRE_NOT : 0 );
@@ -635,6 +653,12 @@ static uint32_t iclass_5_J( uint32_t word, uint64_t extender, op_t *ops, uint32_
             // {jumpr|hintjr}(Rs32)
             op_reg( ops[0], rs32 );
             return BIT(21)? Hex_hintjr : Hex_jumpr;
+        }
+        else if( code2 == 0b0110 && BITS(13:8) == 0 )
+        {
+            // jumprh Rs32
+            op_reg( ops[0], rs32 );
+            return Hex_jumprh;
         }
         else if( BITS(24:22) == 0b101 && BIT(13) == 0 && BIT(10) == 0 )
         {
@@ -2684,10 +2708,10 @@ static uint32_t iclass_5_SYS( uint32_t word, uint64_t /*extender*/, op_t *ops, u
         // isync
         return Hex_isync;
     }
-    if( BITS(27:16) == 0b011111100000 && BITS(13:0) == 0 )
+    if( BITS(27:16) == 0b011111100000 && BIT(13) == 0 && BITS(11:0) == 0 )
     {
-        // rte
-        return Hex_rte;
+        // {unpause|rte}
+        return BIT(12)? Hex_unpause : Hex_rte;
     }
     return 0;
 }
@@ -3792,6 +3816,63 @@ static uint32_t iclass_1_HVX_v69( uint32_t word, uint64_t /*extender*/, op_t *op
     return 0;
 }
 
+static uint32_t iclass_1_HVX_v73( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
+{
+    uint32_t s5 = BITS(20:16), u5 = BITS(12:8), d5 = BITS(4:0), code, f;
+
+    if( BITS(27:21) == 0b1100100 && BIT(13) == 1 )
+    {
+        // Qd4 [*]= vcmp.gt(Vu32.bf,Vv32.bf)
+        switch( BITS(7:2) )
+        {
+        case 0b001110: flags = CMP_GT | IAT_OR;  break;
+        case 0b011110: flags = CMP_GT | IAT_ASS; break;
+        case 0b110100: flags = CMP_GT | IAT_AND; break;
+        case 0b111100: flags = CMP_GT | IAT_XOR; break;
+        default: return 0;
+        }
+        op_reg( ops[0], REG_Q(BITS(1:0)) );
+        op_reg( ops[1], REG_V(u5), REG_POST_BF );
+        op_reg( ops[2], REG_V(s5), REG_POST_BF );
+        return Hex_vcmp;
+    }
+    if( BITS(27:23) == 0b11010 && BIT(21) == 0 && BIT(13) == 1 )
+    {
+        // various .bf ops
+        switch( (BIT(22) << 3) | BITS(7:5) )
+        {
+        case 0b0000: code = Hex_vmpy,  f = RP(SF, BF, BF) | DD, flags = IAT_ADD; break;
+        case 0b1000: code = Hex_vmin,  f = RP(BF, BF, BF); break;
+        case 0b1011: code = Hex_vcvt2, f = RP(BF, SF, SF); break;
+        case 0b1100: code = Hex_vmpy,  f = RP(SF, BF, BF) | DD; break;
+        case 0b1101: code = Hex_vsub,  f = RP(SF, BF, BF) | DD; break;
+        case 0b1110: code = Hex_vadd,  f = RP(SF, BF, BF) | DD; break;
+        case 0b1111: code = Hex_vmax,  f = RP(BF, BF, BF); break;
+        default: return 0;
+        }
+        op_reg( ops[0], REG_V(d5), FLG_D(f) );
+        op_reg( ops[1], REG_V(u5), FLG_S(f) );
+        op_reg( ops[2], REG_V(s5), FLG_T(f) );
+        return code;
+    }
+    if( BITS(27:16) == 0b111000000101 && BIT(13) == 1 )
+    {
+        // Vd32.{w|h|sf|hf} = Vu32.{w|h|sf|hf}
+        switch( BITS(7:5) )
+        {
+        case 0b001: f = RP( W, SF, _); break;
+        case 0b010: f = RP( H, HF, _); break;
+        case 0b011: f = RP(SF,  W, _); break;
+        case 0b100: f = RP(HF,  H, _); break;
+        default: return 0;
+        }
+        op_reg( ops[0], REG_V(d5), FLG_D(f) );
+        op_reg( ops[1], REG_V(u5), FLG_S(f) );
+        return Hex_mov;
+    }
+    return 0;
+}
+
 static uint32_t iclass_2_HVX( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), u5 = BITS(12:8), d5 = BITS(4:0);
@@ -4003,103 +4084,124 @@ static uint32_t iclass_9_HVX( uint32_t word, uint64_t /*extender*/, op_t *ops, u
 
 static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &/*flags*/ )
 {
-    if( BITS(27:21) != 0b0010000 || BITS(7:6) != 0b11 )
+    if( BITS(27:21) != 0b0010000 )
         return 0;
 
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8);
-    if( BIT(13) == 0 && t5 == 3 && BITS(5:1) == 0b11111 )
+    if( BIT(13) == 1 && BITS(7:5) == 0b010 )
     {
-        // bias = mxmem[2](Rs32)
-        op_reg( ops[0], REG_BIAS );
-        op_mxmem( ops[1], BIT(0)? MEM_MX : MEM_MX2, REG_R(s5) );
-        return Hex_mov;
-    }
-    if( BIT(13) == 0 && BIT(5) == 1 )
-    {
-        // activation.{ub|hf} = mxmem(Rs32,Rt32):...
-        uint32_t suff, ub;
+        // weight.n = mxmem(Rs32,Rt32):2x:...
+        uint32_t suff;
         switch( BITS(4:0) )
         {
-        case 0b00000: ub = 1, suff = MX_DEEP; break;
-        case 0b00001: ub = 1, suff = MX_DEEP | MX_CM; break;
-        case 0b00010: ub = 0, suff = MX_DEEP; break;
-        case 0b00100: ub = 0, suff = 0; break;
-        case 0b00110: ub = 0, suff = MX_ABOVE; break;
-        case 0b01000: ub = 1, suff = MX_DILATE; break;
-        case 0b01001: ub = 1, suff = MX_DILATE | MX_CM; break;
-        case 0b01100: ub = 1, suff = 0; break;
-        case 0b01101: ub = 1, suff = MX_CM; break;
-        case 0b01110: ub = 1, suff = MX_ABOVE; break;
-        case 0b01111: ub = 1, suff = MX_ABOVE | MX_CM; break;
-        case 0b10000: ub = 1, suff = MX_SINGLE; break;
-        case 0b10001: ub = 1, suff = MX_SINGLE | MX_CM; break;
-        case 0b11000: ub = 0, suff = MX_SINGLE; break;
-        case 0b11010: ub = 0, suff = MX_DILATE; break;
+        case 0b00001: suff = MX_SINGLE; break;
+        case 0b00010: suff = MX_DROP; break;
+        case 0b00011: suff = MX_DEEP; break;
+        case 0b00100: suff = MX_DILATE; break;
+        case 0b00101: suff = MX_AFTER; break;
+        case 0b00110: suff = 0; break;
         default: return 0;
         }
-        op_reg( ops[0], REG_ACTIVATION, ub? REG_POST_UB : REG_POST_HF );
-        op_mxmem( ops[1], MEM_MX | suff, REG_R(s5), REG_R(t5) );
+        op_reg( ops[0], REG_WEIGHT, REG_POST_N );
+        op_mxmem( ops[1], MEM_MX | MX_2X | suff, REG_R(s5), REG_R(t5) );
         return Hex_mov;
     }
-    if( BIT(13) == 1 )
+    if( BITS(7:6) == 0b11 )
     {
-        // weight.{sc|ubit|sbit|sm|b|n|c|hf} = mxmem(Rs32,Rt32):...
-        uint32_t suff = 0, dt;
-        switch( BITS(5:0) )
+        if( BIT(13) == 0 && t5 == 3 && BITS(5:1) == 0b11111 )
         {
-        case 0b000000: dt = REG_POST_SC,   suff = MX_SINGLE; break;
-        case 0b000001: dt = REG_POST_SC,   suff = MX_DROP; break;
-        case 0b000010: dt = REG_POST_SC,   suff = MX_DEEP; break;
-        case 0b000011: dt = REG_POST_SC,   suff = MX_AFTER; break;
-        case 0b000100: dt = REG_POST_SC,   suff = MX_DILATE; break;
-        case 0b000101: dt = REG_POST_UBIT, suff = MX_SINGLE; break;
-        case 0b000110: dt = REG_POST_UBIT, suff = MX_DROP; break;
-        case 0b000111: dt = REG_POST_UBIT, suff = MX_DEEP; break;
-        case 0b001000: dt = REG_POST_UBIT, suff = MX_AFTER; break;
-        case 0b001001: dt = REG_POST_UBIT, suff = MX_DILATE; break;
-        case 0b001010: dt = REG_POST_SBIT, suff = MX_SINGLE; break;
-        case 0b001011: dt = REG_POST_SBIT, suff = MX_DROP; break;
-        case 0b001100: dt = REG_POST_SBIT, suff = MX_DEEP; break;
-        case 0b001101: dt = REG_POST_SBIT, suff = MX_AFTER; break;
-        case 0b001110: dt = REG_POST_SBIT, suff = MX_DILATE; break;
-        case 0b001111: dt = REG_POST_SM,   suff = MX_SINGLE; break;
-        case 0b010000: dt = REG_POST_SM,   suff = MX_DROP; break;
-        case 0b010001: dt = REG_POST_SM,   suff = MX_DEEP; break;
-        case 0b010010: dt = REG_POST_SM,   suff = MX_AFTER; break;
-        case 0b010011: dt = REG_POST_SM,   suff = MX_DILATE; break;
-        case 0b100000: dt = REG_POST_B;    break;
-        case 0b100001: dt = REG_POST_N;    break;
-        case 0b100010: dt = REG_POST_C;    break;
-        case 0b100011: dt = REG_POST_UBIT; break;
-        case 0b100100: dt = REG_POST_SBIT; break;
-        case 0b100110: dt = REG_POST_B,    suff = MX_SINGLE; break;
-        case 0b100111: dt = REG_POST_B,    suff = MX_DROP; break;
-        case 0b101000: dt = REG_POST_B,    suff = MX_DEEP; break;
-        case 0b101001: dt = REG_POST_B,    suff = MX_AFTER; break;
-        case 0b101011: dt = REG_POST_B,    suff = MX_DILATE; break;
-        case 0b101100: dt = REG_POST_N,    suff = MX_SINGLE; break;
-        case 0b101101: dt = REG_POST_N,    suff = MX_DROP; break;
-        case 0b101110: dt = REG_POST_N,    suff = MX_DEEP; break;
-        case 0b101111: dt = REG_POST_HF;   break;
-        case 0b110000: dt = REG_POST_SC;   break;
-        case 0b110001: dt = REG_POST_SM;   break;
-        case 0b110010: dt = REG_POST_HF,   suff = MX_SINGLE; break;
-        case 0b110011: dt = REG_POST_HF,   suff = MX_DROP; break;
-        case 0b110100: dt = REG_POST_HF,   suff = MX_DEEP; break;
-        case 0b110101: dt = REG_POST_HF,   suff = MX_AFTER; break;
-        case 0b110110: dt = REG_POST_HF,   suff = MX_DILATE; break;
-        case 0b110111: dt = REG_POST_N,    suff = MX_AFTER; break;
-        case 0b111000: dt = REG_POST_N,    suff = MX_DILATE; break;
-        case 0b111001: dt = REG_POST_C,    suff = MX_SINGLE; break;
-        case 0b111010: dt = REG_POST_C,    suff = MX_DROP; break;
-        case 0b111011: dt = REG_POST_C,    suff = MX_DEEP; break;
-        case 0b111100: dt = REG_POST_C,    suff = MX_AFTER; break;
-        case 0b111101: dt = REG_POST_C,    suff = MX_DILATE; break;
-        default: return 0;
+            // bias = mxmem[2](Rs32)
+            op_reg( ops[0], REG_BIAS );
+            op_mxmem( ops[1], BIT(0)? MEM_MX : MEM_MX2, REG_R(s5) );
+            return Hex_mov;
         }
-        op_reg( ops[0], REG_WEIGHT, dt );
-        op_mxmem( ops[1], MEM_MX | suff, REG_R(s5), REG_R(t5) );
-        return Hex_mov;
+        if( BIT(13) == 0 && BIT(5) == 1 )
+        {
+            // activation.{ub|hf} = mxmem(Rs32,Rt32):...
+            uint32_t suff, ub;
+            switch( BITS(4:0) )
+            {
+            case 0b00000: ub = 1, suff = MX_DEEP; break;
+            case 0b00001: ub = 1, suff = MX_DEEP | MX_CM; break;
+            case 0b00010: ub = 0, suff = MX_DEEP; break;
+            case 0b00100: ub = 0, suff = 0; break;
+            case 0b00110: ub = 0, suff = MX_ABOVE; break;
+            case 0b01000: ub = 1, suff = MX_DILATE; break;
+            case 0b01001: ub = 1, suff = MX_DILATE | MX_CM; break;
+            case 0b01100: ub = 1, suff = 0; break;
+            case 0b01101: ub = 1, suff = MX_CM; break;
+            case 0b01110: ub = 1, suff = MX_ABOVE; break;
+            case 0b01111: ub = 1, suff = MX_ABOVE | MX_CM; break;
+            case 0b10000: ub = 1, suff = MX_SINGLE; break;
+            case 0b10001: ub = 1, suff = MX_SINGLE | MX_CM; break;
+            case 0b11000: ub = 0, suff = MX_SINGLE; break;
+            case 0b11010: ub = 0, suff = MX_DILATE; break;
+            default: return 0;
+            }
+            op_reg( ops[0], REG_ACTIVATION, ub? REG_POST_UB : REG_POST_HF );
+            op_mxmem( ops[1], MEM_MX | suff, REG_R(s5), REG_R(t5) );
+            return Hex_mov;
+        }
+        if( BIT(13) == 1 )
+        {
+            // weight.{sc|ubit|sbit|sm|b|n|c|hf} = mxmem(Rs32,Rt32):...
+            uint32_t suff = 0, dt;
+            switch( BITS(5:0) )
+            {
+            case 0b000000: dt = REG_POST_SC,   suff = MX_SINGLE; break;
+            case 0b000001: dt = REG_POST_SC,   suff = MX_DROP; break;
+            case 0b000010: dt = REG_POST_SC,   suff = MX_DEEP; break;
+            case 0b000011: dt = REG_POST_SC,   suff = MX_AFTER; break;
+            case 0b000100: dt = REG_POST_SC,   suff = MX_DILATE; break;
+            case 0b000101: dt = REG_POST_UBIT, suff = MX_SINGLE; break;
+            case 0b000110: dt = REG_POST_UBIT, suff = MX_DROP; break;
+            case 0b000111: dt = REG_POST_UBIT, suff = MX_DEEP; break;
+            case 0b001000: dt = REG_POST_UBIT, suff = MX_AFTER; break;
+            case 0b001001: dt = REG_POST_UBIT, suff = MX_DILATE; break;
+            case 0b001010: dt = REG_POST_SBIT, suff = MX_SINGLE; break;
+            case 0b001011: dt = REG_POST_SBIT, suff = MX_DROP; break;
+            case 0b001100: dt = REG_POST_SBIT, suff = MX_DEEP; break;
+            case 0b001101: dt = REG_POST_SBIT, suff = MX_AFTER; break;
+            case 0b001110: dt = REG_POST_SBIT, suff = MX_DILATE; break;
+            case 0b001111: dt = REG_POST_SM,   suff = MX_SINGLE; break;
+            case 0b010000: dt = REG_POST_SM,   suff = MX_DROP; break;
+            case 0b010001: dt = REG_POST_SM,   suff = MX_DEEP; break;
+            case 0b010010: dt = REG_POST_SM,   suff = MX_AFTER; break;
+            case 0b010011: dt = REG_POST_SM,   suff = MX_DILATE; break;
+            case 0b100000: dt = REG_POST_B;    break;
+            case 0b100001: dt = REG_POST_N;    break;
+            case 0b100010: dt = REG_POST_C;    break;
+            case 0b100011: dt = REG_POST_UBIT; break;
+            case 0b100100: dt = REG_POST_SBIT; break;
+            case 0b100110: dt = REG_POST_B,    suff = MX_SINGLE; break;
+            case 0b100111: dt = REG_POST_B,    suff = MX_DROP; break;
+            case 0b101000: dt = REG_POST_B,    suff = MX_DEEP; break;
+            case 0b101001: dt = REG_POST_B,    suff = MX_AFTER; break;
+            case 0b101011: dt = REG_POST_B,    suff = MX_DILATE; break;
+            case 0b101100: dt = REG_POST_N,    suff = MX_SINGLE; break;
+            case 0b101101: dt = REG_POST_N,    suff = MX_DROP; break;
+            case 0b101110: dt = REG_POST_N,    suff = MX_DEEP; break;
+            case 0b101111: dt = REG_POST_HF;   break;
+            case 0b110000: dt = REG_POST_SC;   break;
+            case 0b110001: dt = REG_POST_SM;   break;
+            case 0b110010: dt = REG_POST_HF,   suff = MX_SINGLE; break;
+            case 0b110011: dt = REG_POST_HF,   suff = MX_DROP; break;
+            case 0b110100: dt = REG_POST_HF,   suff = MX_DEEP; break;
+            case 0b110101: dt = REG_POST_HF,   suff = MX_AFTER; break;
+            case 0b110110: dt = REG_POST_HF,   suff = MX_DILATE; break;
+            case 0b110111: dt = REG_POST_N,    suff = MX_AFTER; break;
+            case 0b111000: dt = REG_POST_N,    suff = MX_DILATE; break;
+            case 0b111001: dt = REG_POST_C,    suff = MX_SINGLE; break;
+            case 0b111010: dt = REG_POST_C,    suff = MX_DROP; break;
+            case 0b111011: dt = REG_POST_C,    suff = MX_DEEP; break;
+            case 0b111100: dt = REG_POST_C,    suff = MX_AFTER; break;
+            case 0b111101: dt = REG_POST_C,    suff = MX_DILATE; break;
+            default: return 0;
+            }
+            op_reg( ops[0], REG_WEIGHT, dt );
+            op_mxmem( ops[1], MEM_MX | suff, REG_R(s5), REG_R(t5) );
+            return Hex_mov;
+        }
     }
     return 0;
 }
@@ -4177,6 +4279,32 @@ static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, 
             op_imm( ops[1], 16 );
             return Hex_mxshl;
         }
+    }
+    if( BIT(13) == 0 && BITS(4:0) == 0b10000 )
+    {
+        // cvt.{ub|uh|hf} = acc(Rs32)[:2x1|:2x2|:sc0|:sc1]
+        uint32_t dt, suff;
+        switch( BITS(12:8) )
+        {
+        case 0b10111: dt = REG_POST_UB, suff = 0; break;
+        case 0b11000: dt = REG_POST_UH, suff = ACC_2X1; break;
+        case 0b11001: dt = REG_POST_UH, suff = ACC_2X2; break;
+        case 0b11010: dt = REG_POST_HF, suff = 0; break;
+        case 0b11100: dt = REG_POST_UB, suff = ACC_SC0; break;
+        case 0b11101: dt = REG_POST_UB, suff = ACC_SC1; break;
+        default: return 0;
+        }
+        op_reg( ops[0], REG_CVT, dt );
+        op_acc( ops[1], suff, REG_R(s5) );
+        return Hex_mov;
+    }
+    if( BIT(13) == 0 && BITS(4:2) == 0b110 && BITS(1:0) != 3 )
+    {
+        // mxmem(Rs32,Rt32)[:cm|:2x2] = cvt
+        static const uint32_t suff[3] = { 0, MX_CM, MX_2X2 };
+        op_mxmem( ops[0], MEM_MX | suff[ BITS(1:0) ], REG_R(s5), REG_R(t5) );
+        op_reg( ops[1], REG_CVT );
+        return Hex_mov;
     }
     return 0;
 }
@@ -4411,6 +4539,7 @@ static bool decode_single( insn_t &insn, uint32_t word, uint64_t extender )
         if( !itype ) itype = iclass_1_ZReg( word, extender, ops, flags );
         if( !itype ) itype = iclass_1_HVX_v68( word, extender, ops, flags );
         if( !itype ) itype = iclass_1_HVX_v69( word, extender, ops, flags );
+        if( !itype ) itype = iclass_1_HVX_v73( word, extender, ops, flags );
         break;
     case 2:
         itype = iclass_2_NCJ( word, extender, ops, flags );

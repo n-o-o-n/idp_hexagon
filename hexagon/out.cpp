@@ -169,7 +169,7 @@ static void hex_out_reg( outctx_t &ctx, uint32_t reg, uint32_t flags = 0 )
             ctx.out_printf( "q%u", reg - REG_Q0 );
         }
         else if( reg < REG_C0 ) {
-            static const char *rn[] = { "z", "vtmp", "acc", "bias", "activation", "weight" };
+            static const char *rn[] = { "z", "vtmp", "acc", "bias", "activation", "weight", "cvt" };
             ctx.out_line( rn[ reg - REG_Z ] );
         }
         else if( reg < REG_G0 ) {
@@ -197,10 +197,10 @@ static void hex_out_reg( outctx_t &ctx, uint32_t reg, uint32_t flags = 0 )
     // register postfix
     if( (flags >> REG_POST_SHIFT) )
     {
-        const char *postfix[] = {
+        static const char *postfix[] = {
             "", ".new", ".cur", ".tmp", ".l", ".h", "*",
             ".b", ".h", ".w", ".ub", ".uh", ".uw",
-            ".sf", ".hf", ".qf32", ".qf16",
+            ".sf", ".hf", ".bf", ".qf32", ".qf16",
             ".n", ".c", ".sc", ".sm", ".ubit", ".sbit", ":2x1", ":2x2"
         };
         ctx.out_keyword( postfix[(flags & REG_POST_MASK) >> REG_POST_SHIFT] );
@@ -327,21 +327,26 @@ ssize_t out_operand( outctx_t &ctx, const op_t &op )
                 "", ":single", ":drop", ":deep", ":before", ":after", ":above", ":dilate"
             };
             static const char *suff2[] = {
+                "", ":cm", ":2x2",
+            };
+            static const char *suff3[] = {
                 "", ":pos", ":sat",
             };
             static const char *types[] = {
                 "", ".ub", ".uh", ".hf",
             };
-            if( ((type >> 10) & 7) )
-                ctx.out_keyword( suff1[ (type >> 10) & 7 ] );
+            if( (type & MX_2X) )
+                ctx.out_keyword( ":2x" );
+            if( ((type >> 11) & 7) )
+                ctx.out_keyword( suff1[ (type >> 11) & 7 ] );
             if( (type & MX_RETAIN) )
                 ctx.out_keyword( ":retain" );
-            if( (type & MX_CM) )
-                ctx.out_keyword( ":cm" );
             if( ((type >> 15) & 3) )
                 ctx.out_keyword( suff2[ (type >> 15) & 3 ] );
             if( ((type >> 17) & 3) )
-                ctx.out_keyword( types[ (type >> 17) & 3 ] );
+                ctx.out_keyword( suff3[ (type >> 17) & 3 ] );
+            if( ((type >> 19) & 3) )
+                ctx.out_keyword( types[ (type >> 19) & 3 ] );
         }
         return 1;
     }
@@ -358,6 +363,21 @@ ssize_t out_operand( outctx_t &ctx, const op_t &op )
         ctx.out_symbol( '#' );
         ctx.out_value( op, OOFW_IMM | OOFW_32 | ((flags & IMM_SIGNED)? OOF_SIGNED : 0) );
         if( (flags & IMM_PCREL) ) ctx.out_keyword( "@pcrel" );
+        break;
+    case o_acc:
+        ctx.out_line( "acc", COLOR_REG );
+        if( op.reg != 0xFF ) {
+            ctx.out_symbol( '(' );
+            hex_out_reg( ctx, op.reg );
+            ctx.out_symbol( ')' );
+        }
+        if( op.specval )
+        {
+            static const char *postfix[] = {
+                "", ":2x1", ":2x2", ":sc0", ":sc1"
+            };
+            ctx.out_keyword( postfix[op.specval] );
+        }
         break;
     case o_reg_off:
         hex_out_reg( ctx, op.reg );

@@ -84,3 +84,4 @@ History
 2022-02-07 duplex instructions decoded into two separate insn_t  
 2022-02-14 predicate operands stored at the end of ops array; version 5.0 released  
 2023-03-31 added support for IDA v7.7  
+2023-06-26 added support for Hexagon v73; version 5.2 released  

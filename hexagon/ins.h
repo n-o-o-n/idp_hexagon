@@ -105,8 +105,6 @@ enum {
     REG_POST_SM     = (21 << 4),        // .sm
     REG_POST_UBIT   = (22 << 4),        // .ubit
     REG_POST_SBIT   = (23 << 4),        // .sbit
-    REG_POST_2x1    = (24 << 4),        // :2x1
-    REG_POST_2x2    = (25 << 4),        // :2x2
     REG_POST_MASK   = (31 << 4),
     REG_POST_SHIFT  = 4,
     REG_POST_INC    = (1  << 9),         // ...++
@@ -130,8 +128,6 @@ enum {
     MEM_D           = 7,                // memd
     MEM_V           = 8,                // vmem
     MEM_VU          = 9,                // vmemu
-    MEM_MX          = 10,               // mxmem
-    MEM_MX2         = 11,               // mxmem2
     MEM_TYPE_MASK   = 0x0F,
     MEM_FIFO        = 1 << 4,           // memX_fifo
     MEM_LOCKED      = 2 << 4,           // memX_locked
@@ -145,23 +141,27 @@ enum {
     MEM_SUFFIX_MASK = 0x180,
     MEM_SUFFIX_SHIFT= 7,
     MEM_IMM_EXT     = 0x200,
+};
+
+enum {
     // mxmem suffixes
-    MX_2X           = 1 << 10,          // :2x
-    MX_SINGLE       = 1 << 11,          // :single
-    MX_DROP         = 2 << 11,          // :drop
-    MX_DEEP         = 3 << 11,          // :deep
-    MX_BEFORE       = 4 << 11,          // :before
-    MX_AFTER        = 5 << 11,          // :after
-    MX_ABOVE        = 6 << 11,          // :above
-    MX_DILATE       = 7 << 11,          // :dilate
-    MX_RETAIN       = 1 << 14,          // :retain
-    MX_CM           = 1 << 15,          // :cm
-    MX_2X2          = 2 << 15,          // :2x2
-    MX_POS          = 1 << 17,          // :pos
-    MX_SAT          = 2 << 17,          // :sat
-    MX_UB           = 1 << 19,          // .ub
-    MX_UH           = 2 << 19,          // .uh
-    MX_HF           = 3 << 19,          // .hf
+    MX_MEM2         = 1 << 0,           // mxmem2
+    MX_2X           = 1 << 1,           // :2x
+    MX_SINGLE       = 1 << 2,           // :single
+    MX_DROP         = 2 << 2,           // :drop
+    MX_DEEP         = 3 << 2,           // :deep
+    MX_BEFORE       = 4 << 2,           // :before
+    MX_AFTER        = 5 << 2,           // :after
+    MX_ABOVE        = 6 << 2,           // :above
+    MX_DILATE       = 7 << 2,           // :dilate
+    MX_RETAIN       = 1 << 5,           // :retain
+    MX_CM           = 1 << 6,           // :cm
+    MX_2X2          = 2 << 6,           // :2x2
+    MX_POS          = 1 << 8,           // :pos
+    MX_SAT          = 2 << 8,           // :sat
+    MX_UB           = 1 << 10,          // .ub
+    MX_UH           = 2 << 10,          // .uh
+    MX_HF           = 3 << 10,          // .hf
 };
 
 enum {
@@ -170,6 +170,7 @@ enum {
     ACC_2X2         = 2 << 0,           // :2x2
     ACC_SC0         = 3 << 0,           // :sc0
     ACC_SC1         = 4 << 0,           // :sc1
+    ACC_HF          = 5 << 0,           // .hf
 };
 
 static __inline uint32_t mem_op_type( const op_t &op )

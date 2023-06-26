@@ -201,7 +201,7 @@ static void hex_out_reg( outctx_t &ctx, uint32_t reg, uint32_t flags = 0 )
             "", ".new", ".cur", ".tmp", ".l", ".h", "*",
             ".b", ".h", ".w", ".ub", ".uh", ".uw",
             ".sf", ".hf", ".bf", ".qf32", ".qf16",
-            ".n", ".c", ".sc", ".sm", ".ubit", ".sbit", ":2x1", ":2x2"
+            ".n", ".c", ".sc", ".sm", ".ubit", ".sbit",
         };
         ctx.out_keyword( postfix[(flags & REG_POST_MASK) >> REG_POST_SHIFT] );
         if( (flags & REG_POST_INC) )
@@ -213,7 +213,7 @@ static void hex_out_mem( outctx_t &ctx, uint32_t type )
 {
     static const char *types[] = {
         "memb", "membh", "memub", "memubh", "memh", "memuh",
-        "memw", "memd",  "vmem",  "vmemu", "mxmem", "mxmem2",
+        "memw", "memd",  "vmem",  "vmemu",
     };
     static const char *infixes[] = {
         "", "_fifo", "_locked", "_aq", "_rl",
@@ -230,7 +230,7 @@ ssize_t out_operand( outctx_t &ctx, const op_t &op )
 
     // memory accesses
     if( op.type == o_mem || op.type == o_displ ||
-        o_mem_abs_set <= op.type && op.type <= o_mxmem )
+        o_mem_abs_set <= op.type && op.type <= o_mem_locked )
     {
         hex_out_mem( ctx, mem_op_type( op ) );
         ctx.out_symbol( '(' );
@@ -304,13 +304,6 @@ ssize_t out_operand( outctx_t &ctx, const op_t &op )
                 hex_out_reg( ctx, op.specflag2 );
             }
             break;
-        case o_mxmem:        // mxmem[2](Rs[,Rt])
-            hex_out_reg( ctx, op.reg >> 8 );
-            if( (op.reg & 0xFF) != 0xFF ) {
-                ctx.out_line( ", ", COLOR_SYMBOL );
-                hex_out_reg( ctx, op.reg & 0xFF );
-            }
-            break;
         }
         ctx.out_symbol( ')' );
         if( (mem_op_type( op ) & MEM_SUFFIX_MASK) )
@@ -319,34 +312,6 @@ ssize_t out_operand( outctx_t &ctx, const op_t &op )
                 "", ":nt", ":at", ":st",
             };
             ctx.out_keyword( suffixes[ (mem_op_type( op ) & MEM_SUFFIX_MASK) >> MEM_SUFFIX_SHIFT ] );
-        }
-        if( op.type == o_mxmem )
-        {
-            uint32_t type = mem_op_type( op );
-            static const char *suff1[] = {
-                "", ":single", ":drop", ":deep", ":before", ":after", ":above", ":dilate"
-            };
-            static const char *suff2[] = {
-                "", ":cm", ":2x2",
-            };
-            static const char *suff3[] = {
-                "", ":pos", ":sat",
-            };
-            static const char *types[] = {
-                "", ".ub", ".uh", ".hf",
-            };
-            if( (type & MX_2X) )
-                ctx.out_keyword( ":2x" );
-            if( ((type >> 11) & 7) )
-                ctx.out_keyword( suff1[ (type >> 11) & 7 ] );
-            if( (type & MX_RETAIN) )
-                ctx.out_keyword( ":retain" );
-            if( ((type >> 15) & 3) )
-                ctx.out_keyword( suff2[ (type >> 15) & 3 ] );
-            if( ((type >> 17) & 3) )
-                ctx.out_keyword( suff3[ (type >> 17) & 3 ] );
-            if( ((type >> 19) & 3) )
-                ctx.out_keyword( types[ (type >> 19) & 3 ] );
         }
         return 1;
     }
@@ -364,6 +329,38 @@ ssize_t out_operand( outctx_t &ctx, const op_t &op )
         ctx.out_value( op, OOFW_IMM | OOFW_32 | ((flags & IMM_SIGNED)? OOF_SIGNED : 0) );
         if( (flags & IMM_PCREL) ) ctx.out_keyword( "@pcrel" );
         break;
+    case o_mxmem:
+        ctx.out_line( (op.specval & MX_MEM2)? "mxmem2" : "mxmem", COLOR_INSN );
+        ctx.out_symbol( '(' );
+        hex_out_reg( ctx, op.reg >> 8 );
+        if( (op.reg & 0xFF) != 0xFF ) {
+            ctx.out_line( ", ", COLOR_SYMBOL );
+            hex_out_reg( ctx, op.reg & 0xFF );
+        }
+        ctx.out_symbol( ')' );
+        if( (op.specval & MX_2X) )
+            ctx.out_keyword( ":2x" );
+        if( ((op.specval >> 2) & 7) ) {
+            static const char *suff1[] = {
+                "", ":single", ":drop", ":deep", ":before", ":after", ":above", ":dilate"
+            };
+            ctx.out_keyword( suff1[ (op.specval >> 2) & 7 ] );
+        }
+        if( (op.specval & MX_RETAIN) )
+            ctx.out_keyword( ":retain" );
+        if( ((op.specval >> 6) & 3) ) {
+            static const char *suff2[] = { "", ":cm", ":2x2" };
+            ctx.out_keyword( suff2[ (op.specval >> 6) & 3 ] );
+        }
+        if( ((op.specval >> 8) & 3) ) {
+            static const char *suff3[] = { "", ":pos", ":sat" };
+            ctx.out_keyword( suff3[ (op.specval >> 8) & 3 ] );
+        }
+        if( ((op.specval >> 10) & 3) ) {
+            static const char *types[] = { "", ".ub", ".uh", ".hf" };
+            ctx.out_keyword( types[ (op.specval >> 10) & 3 ] );
+        }
+        break;
     case o_acc:
         ctx.out_line( "acc", COLOR_REG );
         if( op.reg != 0xFF ) {
@@ -374,7 +371,7 @@ ssize_t out_operand( outctx_t &ctx, const op_t &op )
         if( op.specval )
         {
             static const char *postfix[] = {
-                "", ":2x1", ":2x2", ":sc0", ":sc1"
+                "", ":2x1", ":2x2", ":sc0", ":sc1", ".hf",
             };
             ctx.out_keyword( postfix[op.specval] );
         }

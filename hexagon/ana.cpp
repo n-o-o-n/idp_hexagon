@@ -299,7 +299,7 @@ static void op_mxmem( op_t &op, uint32_t type, uint32_t rs, uint32_t rt = 0xFF )
     op.reg = (rs << 8) | rt;
 }
 
-static void op_acc( op_t &op, uint32_t type, uint32_t rs = 0xFF )
+static void op_acc( op_t &op, uint32_t type = 0, uint32_t rs = 0xFF )
 {
     // acc[(Rs)][:...]
     op.type = o_acc;
@@ -4103,7 +4103,7 @@ static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, u
         default: return 0;
         }
         op_reg( ops[0], REG_WEIGHT, REG_POST_N );
-        op_mxmem( ops[1], MEM_MX | MX_2X | suff, REG_R(s5), REG_R(t5) );
+        op_mxmem( ops[1], MX_2X | suff, REG_R(s5), REG_R(t5) );
         return Hex_mov;
     }
     if( BITS(7:6) == 0b11 )
@@ -4112,7 +4112,7 @@ static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, u
         {
             // bias = mxmem[2](Rs32)
             op_reg( ops[0], REG_BIAS );
-            op_mxmem( ops[1], BIT(0)? MEM_MX : MEM_MX2, REG_R(s5) );
+            op_mxmem( ops[1], BIT(0)? 0 : MX_MEM2, REG_R(s5) );
             return Hex_mov;
         }
         if( BIT(13) == 0 && BIT(5) == 1 )
@@ -4139,7 +4139,7 @@ static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, u
             default: return 0;
             }
             op_reg( ops[0], REG_ACTIVATION, ub? REG_POST_UB : REG_POST_HF );
-            op_mxmem( ops[1], MEM_MX | suff, REG_R(s5), REG_R(t5) );
+            op_mxmem( ops[1], suff, REG_R(s5), REG_R(t5) );
             return Hex_mov;
         }
         if( BIT(13) == 1 )
@@ -4199,7 +4199,7 @@ static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, u
             default: return 0;
             }
             op_reg( ops[0], REG_WEIGHT, dt );
-            op_mxmem( ops[1], MEM_MX | suff, REG_R(s5), REG_R(t5) );
+            op_mxmem( ops[1], suff, REG_R(s5), REG_R(t5) );
             return Hex_mov;
         }
     }
@@ -4215,12 +4215,12 @@ static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, 
     if( BIT(13) == 0 && BIT(4) == 0 )
     {
         // mxmem(Rs32,Rt32):{before|after}[:retain][:cm][:sat}.ub=acc
-        op_mxmem( ops[0], MEM_MX | MX_UB |
+        op_mxmem( ops[0], MX_UB |
                            (BIT(0)? MX_CM : 0) |
                            (BIT(1)? 0 : MX_SAT) |
                            (BIT(2)? MX_AFTER : MX_BEFORE) |
                            (BIT(3)? MX_RETAIN : 0), REG_R(s5), REG_R(t5) );
-        op_reg( ops[1], REG_ACC );
+        op_acc( ops[1] );
         return Hex_mov;
     }
     if( BIT(13) == 1 && BIT(4) == 0 )
@@ -4232,22 +4232,21 @@ static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, 
             MX_BEFORE | MX_RETAIN, MX_AFTER | MX_POS, MX_AFTER | MX_SAT, MX_AFTER,
             MX_AFTER | MX_RETAIN, MX_AFTER | MX_RETAIN | MX_POS, MX_AFTER | MX_RETAIN | MX_SAT, MX_AFTER | MX_RETAIN,
         };
-        op_mxmem( ops[0], MEM_MX |
-                           suff[ BITS(3:0) ] |
+        op_mxmem( ops[0], suff[ BITS(3:0) ] |
                            (BIT(1)? MX_UH : MX_HF),
                            REG_R(s5), REG_R(t5) );
-        op_reg( ops[1], REG_ACC, BIT(1)? REG_POST_2x1 : 0 );
+        op_acc( ops[1], BIT(1)? ACC_2X1 : 0 );
         return Hex_mov;
     }
     if( BIT(13) == 1 && BIT(4) == 1 && BIT(1) == 1 )
     {
         // mxmem(Rs32,Rt32):{before|after}[:retain][:sat].uh=acc:2x2
-        op_mxmem( ops[0], MEM_MX | MX_UH |
+        op_mxmem( ops[0], MX_UH |
                            (BIT(3)? MX_AFTER : MX_BEFORE) |
                            (BIT(2)? MX_RETAIN : 0) |
                            (BIT(0)? 0 : MX_SAT),
                            REG_R(s5), REG_R(t5) );
-        op_reg( ops[1], REG_ACC, REG_POST_2x2 );
+        op_acc( ops[1], ACC_2X2 );
         return Hex_mov;
     }
     // rest of instructions
@@ -4258,24 +4257,24 @@ static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, 
         case 0b000:
         case 0b110:
             // mxmem[2](Rs32)=bias
-            op_mxmem( ops[0], BIT(1)? MEM_MX2 : MEM_MX, REG_R(s5) );
+            op_mxmem( ops[0], BIT(1)? MX_MEM2 : 0, REG_R(s5) );
             op_reg( ops[1], REG_BIAS );
             return Hex_mov;
         case 0b001:
         case 0b011:
             // mxclracc[.hf]
             if( s5 ) return 0;
-            op_reg( ops[0], REG_ACC, BIT(1)? REG_POST_HF : 0 );
+            op_acc( ops[0], BIT(1)? ACC_HF : 0 );
             return Hex_mxclr;
         case 0b100:
         case 0b101:
             // mxswapacc[.hf]
             if( s5 ) return 0;
-            op_reg( ops[0], REG_ACC, BIT(0)? REG_POST_HF : 0 );
+            op_acc( ops[0], BIT(0)? ACC_HF : 0 );
             return Hex_mxswap;
         case 0b111:
             // acc=mxshl(acc,#16)
-            op_reg( ops[0], REG_ACC );
+            op_acc( ops[0] );
             op_imm( ops[1], 16 );
             return Hex_mxshl;
         }
@@ -4302,7 +4301,7 @@ static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, 
     {
         // mxmem(Rs32,Rt32)[:cm|:2x2] = cvt
         static const uint32_t suff[3] = { 0, MX_CM, MX_2X2 };
-        op_mxmem( ops[0], MEM_MX | suff[ BITS(1:0) ], REG_R(s5), REG_R(t5) );
+        op_mxmem( ops[0], suff[ BITS(1:0) ], REG_R(s5), REG_R(t5) );
         op_reg( ops[1], REG_CVT );
         return Hex_mov;
     }

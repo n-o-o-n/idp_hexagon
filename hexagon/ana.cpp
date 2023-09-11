@@ -142,23 +142,24 @@ static uint32_t new_value( uint32_t nt, bool hvx = false )
     }
     // we got the producer, find out the operand
     // TODO: check if duplexes have to be supported
-    const op_t *op = temp.ops;
-    assert( op->type == o_reg );
-    if( !hvx )
     {
-        assert( (nt & 1) == 0 );
-        result = op->reg;
+        const op_t *op = temp.ops;
+        assert( op->type == o_reg );
+        if( !hvx )
+        {
+            assert( (nt & 1) == 0 );
+            result = op->reg;
+        }
+        else // hvx
+        {
+            // a pair of vector registers?
+            if( IN_RANGE(op->reg, REG_V0, REG_V0 + 31) && (op->specval & REG_DOUBLE) )
+                result = op->reg ^ (nt & 1);
+            else
+                // some instructions produce 2 output registers
+                result = op[(nt & 1)].reg;
+        }
     }
-    else // hvx
-    {
-        // a pair of vector registers?
-        if( IN_RANGE(op->reg, REG_V0, REG_V0 + 31) && (op->specval & REG_DOUBLE) )
-            result = op->reg ^ (nt & 1);
-        else
-            // some instructions produce 2 output registers
-            result = op[(nt & 1)].reg;
-    }
-
 __cleanup:
     // restore globals
     s_pkt_start = saved_pkt_start, s_insn_ea = saved_ea;

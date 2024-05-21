@@ -2,7 +2,7 @@ Hexagon Processor Module
 ========================
 This is [Hexagon](https://developer.qualcomm.com/software/hexagon-dsp-sdk/dsp-processor) (aka QDSP6) processor module for  [IDA Pro](https://www.hex-rays.com/products/ida/) disassembler.
 Features:
- * Supports all Hexagon versions: V4, V5, V55, V60, V61, V62, V65, V66, V67, V67t, V68, V69, V71, V73
+ * Supports all Hexagon versions: V4, V5, V55, V60, V61, V62, V65, V66, V67, V67t, V68, V69, V71, V73, V75, V77, V79
  * Supports Hexagon Vector Extensions (HVX), audio extensions
  * Supports Hexagon Matrix Extensions (HMX), V66 NN extensions
  * Supports all known instructions, including undocumented ones
@@ -45,6 +45,7 @@ Issues
  * Does not distinguish between different Hexagon versions; will disassemble instructions not supported by a particular version.
  * IDA stores flags for two operands only, and all subsequent operands will have the same flag. For example, if the 2nd operand is an offset, then 4th will be treated as offset too.
  * Xref to a stack variable has random type (r/w).
+ * Some experimental instructions are not decoded.
 
 
 Other Hexagon Processor modules
@@ -85,3 +86,4 @@ History
 2022-02-14 predicate operands stored at the end of ops array; version 5.0 released  
 2023-03-31 added support for IDA v7.7  
 2023-06-26 added support for Hexagon v73; version 5.2 released  
+2024-05-21 added support for Hexagon v75, v77, v79; version 5.3 released  

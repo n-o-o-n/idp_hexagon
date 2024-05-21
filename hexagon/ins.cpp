@@ -131,9 +131,9 @@ static const char *const insn_template[] = {
     "brkpt",                                // Hex_brkpt
     "dccleana(%0)",                         // Hex_dccleana
     "dccleaninva(%0)",                      // Hex_dccleaninva
-    "dcfetch(%0)",                          // Hex_dcfetchbo
+    "dcfetch(%0)%t",                        // Hex_dcfetch
     "dcinva(%0)",                           // Hex_dcinva
-    "dczeroa(%0)",                          // Hex_dczeroa
+    "dczeroa(%0)%t",                        // Hex_dczeroa
     "diag(%0)",                             // Hex_diag
     "diag0(%0, %1)",                        // Hex_diag0
     "diag1(%0, %1)",                        // Hex_diag1
@@ -371,6 +371,7 @@ static const char *const insn_template[] = {
     "release(%0)",                          // Hex_release,
     // HVX
     "%0=prefixsum(%1)",                     // Hex_prefixsum
+    "%0=v6mpy(%1, %2, %3)",                 // Hex_v6mpy
     "%0=vabs(%1)",                          // Hex_vabs
     "%0=vabsdiff(%1, %2)",                  // Hex_vabsdiff
     "%0=vadd(%1, %2)",                      // Hex_vadd
@@ -387,6 +388,10 @@ static const char *const insn_template[] = {
     "%0=vcombine(%1, %2)",                  // Hex_vcombine
     "%0=vcl0(%1)",                          // Hex_vcl0
     "%0=vcmp%c(%1, %2)",                    // Hex_vcmp
+    "%0=vcvt(%1)",                          // Hex_vcvt
+    "%0=vcvt(%1, %2)",                      // Hex_vcvt_2
+    "%0=vcvt2(%1)",                         // Hex_vcvt2
+    "%0=vcvt2(%1, %2)",                     // Hex_vcvt2_2
     "%0=vdeal(%1)",                         // Hex_vdeal
     "vdeal(%0, %1, %2)",                    // Hex_vdeal3
     "%0=vdeal(%1, %2, %3)",                 // Hex_vdeal4
@@ -396,7 +401,12 @@ static const char *const insn_template[] = {
     "%0=vdmpy(%1, %2, %3)",                 // Hex_vdmpy3
     "%0=vdsad(%1, %2)",                     // Hex_vdsad
     "%0=vextract(%1, %2)",                  // Hex_vextract
+    "%0=vfmax(%1, %2)",                     // Hex_vfmax
+    "%0=vfmin(%1, %2)",                     // Hex_vfmin
+    "%0=vfmv(%1)",                          // Hex_vfmv
+    "%0=vfneg(%1)",                         // Hex_vfneg
     "%0=vgather(%1, %2, %3)%g",             // Hex_vgather
+    "%0=vgetqfext(%1, %2)",                 // Hex_vgetqfext
     "vhist",                                // Hex_vhist
     "vhist(%0)",                            // Hex_vhist1
     "%0=vinsert(%1)",                       // Hex_vinsert
@@ -406,6 +416,7 @@ static const char *const insn_template[] = {
     "%0=vlut32(%1, %2, %3)",                // Hex_vlut32
     "%0=vlut4(%1, %2)",                     // Hex_vlut4
     "%0=vmax(%1, %2)",                      // Hex_vmax
+    "%0=vmerge(%1, %2)",                    // Hex_vmerge
     "%0=vmin(%1, %2)",                      // Hex_vmin
     "%0=vmpa(%1, %2)",                      // Hex_vmpa
     "%0=vmpa(%0, %1, %2)",                  // Hex_vmpa3
@@ -426,9 +437,13 @@ static const char *const insn_template[] = {
     "%0=vpacke(%1, %2)",                    // Hex_vpacke
     "%0=vpacko(%1, %2)",                    // Hex_vpacko
     "%0=vpopcount(%1)",                     // Hex_vpopcount
+    "%0=vr16mpyz(%1, %2)",                  // Hex_vr16mpyz
+    "%0=vr16mpyzs(%1, %2)",                 // Hex_vr16mpyzs
+    "%0=vr8mpyz(%1, %2)",                   // Hex_vr8mpyz
     "%0=vrdelta(%1, %2)",                   // Hex_vrdelta
     "%0=vrmpy(%1, %2)",                     // Hex_vrmpy
     "%0=vrmpy(%1, %2, %3)",                 // Hex_vrmpy3
+    "%0=vrmpyz(%1, %2)",                    // Hex_vrmpyz
     "%0=vror(%1, %2)",                      // Hex_vror
     "%0=vrotr(%1, %2)",                     // Hex_vrotr
     "%0=vround(%1, %2)",                    // Hex_vround
@@ -439,6 +454,7 @@ static const char *const insn_template[] = {
     "%0:scatter_release",                   // Hex_vscatterrls
     "%0=vsetq(%1)",                         // Hex_vsetq
     "%0=vsetq2(%1)",                        // Hex_vsetq2
+    "%0=vsetqfext(%1, %2)",                 // Hex_vsetqfext
     "%0=vshuff(%1)",                        // Hex_vshuff
     "vshuff(%0, %1, %2)",                   // Hex_vshuff3
     "%0=vshuff(%1, %2, %3)",                // Hex_vshuff4
@@ -461,20 +477,7 @@ static const char *const insn_template[] = {
     "vwhist256(%0)",                        // Hex_vwhist256_1
     "%0=vxor(%1, %2)",                      // Hex_vxor
     "%0=vzxt(%1)",                          // Hex_vzxt
-    // HVX v66 AI extension
-    "%0=vr16mpyz(%1, %2)",                  // Hex_vr16mpyz
-    "%0=vr16mpyzs(%1, %2)",                 // Hex_vr16mpyzs
-    "%0=vr8mpyz(%1, %2)",                   // Hex_vr8mpyz
-    "%0=vrmpyz(%1, %2)",                    // Hex_vrmpyz
     "%0=zextract(%1)",                      // Hex_zextract
-    // HVX v68
-    "%0=v6mpy(%1, %2, %3)",                 // Hex_v6mpy
-    "%0=vcvt(%1)",                          // Hex_vcvt
-    "%0=vcvt(%1, %2)",                      // Hex_vcvt2
-    "%0=vfmax(%1, %2)",                     // Hex_vfmax
-    "%0=vfmin(%1, %2)",                     // Hex_vfmin
-    "%0=vfmv(%1)",                          // Hex_vfmv
-    "%0=vfneg(%1)",                         // Hex_vfneg
     // HMX
     "mxclr%0",                              // Hex_mxclr
     "%0=mxshl(%0, %1)",                     // Hex_mxshl

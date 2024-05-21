@@ -200,7 +200,7 @@ static void hex_out_reg( outctx_t &ctx, uint32_t reg, uint32_t flags = 0 )
         static const char *postfix[] = {
             "", ".new", ".cur", ".tmp", ".l", ".h", "*",
             ".b", ".h", ".w", ".ub", ".uh", ".uw",
-            ".sf", ".hf", ".bf", ".qf32", ".qf16",
+            ".sf", ".hf", ".bf", ".f8", ".x", ".qf32", ".qf16",
             ".n", ".c", ".sc", ".sm", ".ubit", ".sbit",
         };
         ctx.out_keyword( postfix[(flags & REG_POST_MASK) >> REG_POST_SHIFT] );

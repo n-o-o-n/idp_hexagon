@@ -97,14 +97,16 @@ enum {
     REG_POST_SF     = (13 << 4),        // .sf
     REG_POST_HF     = (14 << 4),        // .hf
     REG_POST_BF     = (15 << 4),        // .bf
-    REG_POST_Q32    = (16 << 4),        // .qf32
-    REG_POST_Q16    = (17 << 4),        // .qf16
-    REG_POST_N      = (18 << 4),        // .n (nibble)
-    REG_POST_C      = (19 << 4),        // .c (crumb)
-    REG_POST_SC     = (20 << 4),        // .sc
-    REG_POST_SM     = (21 << 4),        // .sm
-    REG_POST_UBIT   = (22 << 4),        // .ubit
-    REG_POST_SBIT   = (23 << 4),        // .sbit
+    REG_POST_F8     = (16 << 4),        // .f8
+    REG_POST_X      = (17 << 4),        // .x
+    REG_POST_Q32    = (18 << 4),        // .qf32
+    REG_POST_Q16    = (19 << 4),        // .qf16
+    REG_POST_N      = (20 << 4),        // .n (nibble)
+    REG_POST_C      = (21 << 4),        // .c (crumb)
+    REG_POST_SC     = (22 << 4),        // .sc
+    REG_POST_SM     = (23 << 4),        // .sm
+    REG_POST_UBIT   = (24 << 4),        // .ubit
+    REG_POST_SBIT   = (25 << 4),        // .sbit
     REG_POST_MASK   = (31 << 4),
     REG_POST_SHIFT  = 4,
     REG_POST_INC    = (1  << 9),         // ...++
@@ -704,6 +706,7 @@ enum {
     // HVX
     Hex_HVX_FIRST,
     Hex_prefixsum = Hex_HVX_FIRST,          // %0 = prefixsum(%1)
+    Hex_v6mpy,                              // %0 = v6mpy(%1,%2,%3)
     Hex_vabs,                               // %0 = vabs(%1)
     Hex_vabsdiff,                           // %0 = vabsdiff(%1,%2)
     Hex_vadd,                               // %0 = vadd(%1,%2)
@@ -720,6 +723,10 @@ enum {
     Hex_vcombine,                           // %0 = vcombine(%1,%2)
     Hex_vcl0,                               // %0 = vcl0(%1)
     Hex_vcmp,                               // %0 = vcmp%c(%1,%2)
+    Hex_vcvt,                               // %0 = vcvt(%1)
+    Hex_vcvt_2,                             // %0 = vcvt(%1,%2)
+    Hex_vcvt2,                              // %0 = vcvt2(%1)
+    Hex_vcvt2_2,                            // %0 = vcvt2(%1, %2)
     Hex_vdeal,                              // %0 = vdeal(%1)
     Hex_vdeal3,                             // vdeal(%0,%1,%2)
     Hex_vdeal4,                             // %0 = vdeal(%1,%2,%3)
@@ -729,7 +736,12 @@ enum {
     Hex_vdmpy3,                             // %0 = vdmpy(%1,%2,%3)
     Hex_vdsad,                              // %0 = vdsad(%1,%2)
     Hex_vextract,                           // %0 = vextract(%1,%2)
+    Hex_vfmax,                              // %0 = vfmax(%1,%2)
+    Hex_vfmin,                              // %0 = vfmin(%1,%2)
+    Hex_vfmv,                               // %0 = vfmv(%1)
+    Hex_vfneg,                              // %0 = vfneg(%1)
     Hex_vgather,                            // %0 = vgather(%1,%2,%3)%g
+    Hex_vgetqfext,                          // %0 = vgetqfext(%1,%2)
     Hex_vhist,                              // vhist
     Hex_vhist1,                             // vhist(%0)
     Hex_vinsert,                            // %0 = vinsert(%1)
@@ -739,6 +751,7 @@ enum {
     Hex_vlut32,                             // %0 = vlut32(%1,%2,%3)
     Hex_vlut4,                              // %0 = vlut4(%1,%2)
     Hex_vmax,                               // %0 = vmax(%1,%2)
+    Hex_vmerge,                             // %0 = vmerge(%1,%2)
     Hex_vmin,                               // %0 = vmin(%1,%2)
     Hex_vmpa,                               // %0 = vmpa(%1,%2)
     Hex_vmpa3,                              // %0 = vmpa(%0,%1,%2)
@@ -759,9 +772,13 @@ enum {
     Hex_vpacke,                             // %0 = vpacke(%1,%2)
     Hex_vpacko,                             // %0 = vpacko(%1,%2)
     Hex_vpopcount,                          // %0 = vpopcount(%1)
+    Hex_vr16mpyz,                           // %0 = vr16mpyz(%1,%2)
+    Hex_vr16mpyzs,                          // %0 = vr16mpyzs(%1,%2)
+    Hex_vr8mpyz,                            // %0 = vr8mpyz(%1,%2)
     Hex_vrdelta,                            // %0 = vrdelta(%1,%2)
     Hex_vrmpy,                              // %0 = vrmpy(%1,%2)
     Hex_vrmpy3,                             // %0 = vrmpy(%1,%2,%3)
+    Hex_vrmpyz,                             // %0 = vrmpyz(%1,%2)
     Hex_vror,                               // %0 = vror(%1,%2)
     Hex_vrotr,                              // %0 = vrotr(%1,%2)
     Hex_vround,                             // %0 = vround(%1,%2)
@@ -772,6 +789,7 @@ enum {
     Hex_vscatterrls,                        // %0:scatter_release
     Hex_vsetq,                              // %0 = vsetq(%1)
     Hex_vsetq2,                             // %0 = vsetq2(%1)
+    Hex_vsetqfext,                          // %0 = vsetqfext(%1,%2)
     Hex_vshuff,                             // %0 = vshuff(%1)
     Hex_vshuff3,                            // vshuff(%0,%1,%2)
     Hex_vshuff4,                            // %0 = vshuff(%1,%2,%3)
@@ -794,21 +812,8 @@ enum {
     Hex_vwhist256_1,                        // vwhist256(%0)
     Hex_vxor,                               // %0 = vxor(%1,%2)
     Hex_vzxt,                               // %0 = vzxt(%1)
-    // HVX v66 AI extension
-    Hex_vr16mpyz,                           // %0 = vr16mpyz(%1,%2)
-    Hex_vr16mpyzs,                          // %0 = vr16mpyzs(%1,%2)
-    Hex_vr8mpyz,                            // %0 = vr8mpyz(%1,%2)
-    Hex_vrmpyz,                             // %0 = vrmpyz(%1,%2)
     Hex_zextract,                           // %0 = zextract(%1)
-    // HVX v68
-    Hex_v6mpy,                              // %0 = v6mpy(%1,%2,%3)
-    Hex_vcvt,                               // %0 = vcvt(%1)
-    Hex_vcvt2,                              // %0 = vcvt(%1,%2)
-    Hex_vfmax,                              // %0 = vfmax(%1,%2)
-    Hex_vfmin,                              // %0 = vfmin(%1,%2)
-    Hex_vfmv,                               // %0 = vfmv(%1)
-    Hex_vfneg,                              // %0 = vfneg(%1)
-    Hex_HVX_LAST = Hex_vfneg,
+    Hex_HVX_LAST = Hex_zextract,
     // HMX
     Hex_mxclr,                              // mxclr%0
     Hex_mxshl,                              // %0 = mxshl(%0,%1)

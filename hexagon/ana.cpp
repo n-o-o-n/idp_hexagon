@@ -700,7 +700,7 @@ static uint32_t iclass_5_J( uint32_t word, uint64_t extender, op_t *ops, uint32_
 static uint32_t iclass_6_CR( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
     uint32_t s2 = BITS(17:16), t2 = BITS(9:8), u2 = BITS(7:6), d2 = BITS(1:0);
-    uint32_t s5 = BITS(20:16), d5 = BITS(4:0);
+    uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
     bool extended = extender != 0;
     static const uint8_t loops[8] = {
         Hex_loop0, Hex_loop1, 0, 0,
@@ -805,7 +805,7 @@ static uint32_t iclass_6_CR( uint32_t word, uint64_t extender, op_t *ops, uint32
     if( BITS(27:21) == 0b0010010 && BIT(13) == 0 && BIT(7) == 0 && BITS(4:0) == 0 )
     {
         // trace(Rs32), diag[0|1](Rs32,Rt32)
-        uint32_t t5 = BITS(12:8), code = BITS(6:5);
+        uint32_t code = BITS(6:5);
         uint32_t dbl = BIT(6)? REG_DOUBLE : 0;
         if( !dbl && t5 ) return 0;
         op_reg( ops[0], REG_R(s5), dbl );
@@ -1370,7 +1370,7 @@ static const uint8_t mtypes_cl9[16][3] = {
 
 static uint32_t iclass_9_LD( uint32_t word, uint64_t extender, op_t *ops, uint32_t &flags )
 {
-    uint32_t s5 = BITS(20:16), d5 = BITS(4:0);
+    uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
     const uint8_t *mtype = mtypes_cl9[ BITS(24:21) ];
     bool extended = extender != 0;
 
@@ -1446,22 +1446,16 @@ static uint32_t iclass_9_LD( uint32_t word, uint64_t extender, op_t *ops, uint32
         // Rd32 = memw_phys(Rs32,Rt32)
         op_reg( ops[0], REG_R(d5) );
         op_reg( ops[1], REG_R(s5) );
-        op_reg( ops[2], REG_R(BITS(12:8)) );
+        op_reg( ops[2], REG_R(t5) );
         return Hex_ldphys;
     }
     if( BITS(27:21) == 0b0010000 && BITS(7:0) == 0b01000000 )
     {
         // memcpy(Rs32,Rt32,Mu2)
         op_reg( ops[0], REG_R(s5) );
-        op_reg( ops[1], REG_R(BITS(12:8)) );
+        op_reg( ops[1], REG_R(t5) );
         op_reg( ops[2], REG_P(BIT(13)) );
         return Hex_memcpy;
-    }
-    if( BITS(27:21) == 0b0100000 && BITS(13:11) == 0 )
-    {
-        // dcfetch(Rs32+#Ii)
-        op_reg_off( ops[0], REG_R(s5), BITS(10:0) << 3 );
-        return Hex_dcfetch;
     }
     return 0;
 }
@@ -1534,6 +1528,27 @@ static uint32_t iclass_10_ST( uint32_t word, uint64_t extender, op_t *ops, uint3
                 code == 3? REG_POST_HI :
                 code == 6? REG_DOUBLE : 0 );
         return Hex_mov;
+    }
+    if( BITS(27:24) == 0b1010 && BIT(21) == 0 && BIT(7) == 0 )
+    {
+        static const uint8_t types[4] = { MEM_B | MEM_NT, MEM_H | MEM_NT, MEM_W | MEM_NT, MEM_D | MEM_NT };
+        code = BITS(23:22), type = types[ code ];
+        if( BIT(13) == 1 )
+        {
+            // if ([!]Pv4) memX(Rx32++#Ii):nt = Rt[t]32
+            op_reg( ops[PRED_A], REG_P(BITS(1:0)), BIT(2)? REG_PRE_NOT : 0 );
+            op_mem_inc( ops[0], o_mem_inc_imm, type, REG_R(s5), SBITS(6:3) << mem_shift( type ) );
+            op_reg( ops[1], REG_R(t5), code == 3? REG_DOUBLE : 0 );
+            flags = PRED_REG;
+            return Hex_mov;
+        }
+        else if( BITS(2:0) == 0 )
+        {
+            // memX(Rx32++#Ii):nt = Rt[t]32
+            op_mem_inc( ops[0], o_mem_inc_imm, type, REG_R(s5), SBITS(6:3) << mem_shift( type ) );
+            op_reg( ops[1], REG_R(t5), code == 3? REG_DOUBLE : 0 );
+            return Hex_mov;
+        }
     }
     if( BITS(27:24) == 0b1011 && BIT(13) == 1 && type != 255 )
     {
@@ -2887,19 +2902,40 @@ static uint32_t iclass_6_SYS( uint32_t word, uint64_t /*extender*/, op_t *ops, u
     return 0;
 }
 
-static uint32_t iclass_10_SYS( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &/*flags*/ )
+static uint32_t iclass_9_SYS( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
+{
+    uint32_t s5 = BITS(20:16);
+
+    if( BITS(27:21) == 0b0100000 && BITS(12:11) == 0 )
+    {
+        // dcfetch(Rs32+#Ii)[:nt]
+        flags = BIT(13)? JMP_NT : 0;
+        op_reg_off( ops[0], REG_R(s5), BITS(10:0) << 3 );
+        return Hex_dcfetch;
+    }
+    return 0;
+}
+
+static uint32_t iclass_10_SYS( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
 {
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8), d5 = BITS(4:0);
 
     switch( BITS(27:24) )
     {
     case 0b0000:
-        if( BITS(13:0) == 0 )
+        if( BITS(23:21) < 3 && BITS(13:0) == 0 )
         {
-            // dc{clean|inv|cleaninv|zero}a(Rs32)
-            static const uint8_t itypes[8] = { Hex_dccleana, Hex_dcinva, Hex_dccleaninva, 0, 0, 0, Hex_dczeroa, };
+            // dc{clean|inv|cleaninv}a(Rs32)
+            static const uint8_t itypes[3] = { Hex_dccleana, Hex_dcinva, Hex_dccleaninva };
             op_reg( ops[0], REG_R(s5) );
             return itypes[ BITS(23:21) ];
+        }
+        if( BITS(23:21) == 0b110 && BITS(12:0) == 0 )
+        {
+            // dczeroa(Rs32)[:nt]
+            op_reg( ops[0], REG_R(s5) );
+            flags = BIT(13)? JMP_NT : 0;
+            return Hex_dczeroa;
         }
         if( BITS(23:21) == 0b111 && BITS(13:2) == 0b100000000000 )
         {
@@ -3724,50 +3760,50 @@ static uint32_t iclass_1_HVX_v68( uint32_t word, uint64_t /*extender*/, op_t *op
     // all the remaining instructions
     switch( (BITS(25:21) << 3) | BITS(7:5) )
     {
-    case 0b00010001: code = Hex_vmpy,  f = RP( SF, HF, HF) | DD, flags = IAT_ADD; break;
-    case 0b00010010: code = Hex_vmpy,  f = RP( HF, HF, HF), flags = IAT_ADD; break;
-    case 0b00010011: code = Hex_vdmpy, f = RP( SF, HF, HF), flags = IAT_ADD; break;
-    case 0b00011000: code = Hex_vfmin, f = RP( HF, HF, HF); break;
-    case 0b00011001: code = Hex_vfmin, f = RP( SF, SF, SF); break;
-    case 0b00011010: code = Hex_vfmax, f = RP( HF, HF, HF); break;
-    case 0b00011011: code = Hex_vfmax, f = RP( SF, SF, SF); break;
-    case 0b11011000: code = Hex_vsub,  f = RP( HF, HF, HF); break;
-    case 0b11011001: code = Hex_vcvt2, f = RP( HF, SF, SF); break;
-    case 0b11011010: code = Hex_vadd,  f = RP(Q16,Q16,Q16); break;
-    case 0b11011011: code = Hex_vadd,  f = RP(Q16, HF, HF); break;
-    case 0b11011100: code = Hex_vadd,  f = RP(Q16,Q16, HF); break;
-    case 0b11011101: code = Hex_vsub,  f = RP(Q16,Q16,Q16); break;
-    case 0b11011110: code = Hex_vsub,  f = RP(Q16, HF, HF); break;
-    case 0b11011111: code = Hex_vsub,  f = RP(Q16,Q16, HF); break;
-    case 0b11100000: code = Hex_vmpy,  f = RP(Q32,Q16, HF) | DD; break;
-    case 0b11100001: code = Hex_vmpy,  f = RP( SF, SF, SF); break;
-    case 0b11100010: code = Hex_vmpy,  f = RP( SF, HF, HF) | DD; break;
-    case 0b11100011: code = Hex_vmpy,  f = RP( HF, HF, HF); break;
-    case 0b11100100: code = Hex_vadd,  f = RP( SF, HF, HF) | DD; break;
-    case 0b11100101: code = Hex_vsub,  f = RP( SF, HF, HF) | DD; break;
-    case 0b11100110: code = Hex_vadd,  f = RP( SF, SF, SF); break;
-    case 0b11100111: code = Hex_vsub,  f = RP( SF, SF, SF); break;
-    case 0b11101000: code = Hex_vadd,  f = RP(Q32,Q32,Q32); break;
-    case 0b11101001: code = Hex_vadd,  f = RP(Q32, SF, SF); break;
-    case 0b11101010: code = Hex_vadd,  f = RP(Q32,Q32, SF); break;
-    case 0b11101011: code = Hex_vsub,  f = RP(Q32,Q32,Q32); break;
-    case 0b11101100: code = Hex_vsub,  f = RP(Q32, SF, SF); break;
-    case 0b11101101: code = Hex_vsub,  f = RP(Q32,Q32, SF); break;
-    case 0b11101110: code = Hex_vdmpy, f = RP( SF, HF, HF); break;
-    case 0b11101111: code = Hex_vadd,  f = RP( HF, HF, HF); break;
-    case 0b11110001: code = Hex_vmax,  f = RP( SF, SF, SF); break;
-    case 0b11110010: code = Hex_vmin,  f = RP( SF, SF, SF); break;
-    case 0b11110011: code = Hex_vmax,  f = RP( HF, HF, HF); break;
-    case 0b11110100: code = Hex_vmin,  f = RP( HF, HF, HF); break;
-    case 0b11110101: code = Hex_vcvt2, f = RP( UB, HF, HF); break;
-    case 0b11110110: code = Hex_vcvt2, f = RP(  B, HF, HF); break;
-    case 0b11111000: code = Hex_vmpy,  f = RP(Q32,Q32,Q32); break;
-    case 0b11111001: code = Hex_vmpy,  f = RP(Q32, SF, SF); break;
-    case 0b11111011: code = Hex_vmpy,  f = RP(Q16,Q16,Q16); break;
-    case 0b11111100: code = Hex_vmpy,  f = RP(Q16, HF, HF); break;
-    case 0b11111101: code = Hex_vmpy,  f = RP(Q16,Q16, HF); break;
-    case 0b11111110: code = Hex_vmpy,  f = RP(Q32,Q16,Q16) | DD; break;
-    case 0b11111111: code = Hex_vmpy,  f = RP(Q32, HF, HF) | DD; break;
+    case 0b00010001: code = Hex_vmpy,   f = RP( SF, HF, HF) | DD, flags = IAT_ADD; break;
+    case 0b00010010: code = Hex_vmpy,   f = RP( HF, HF, HF), flags = IAT_ADD; break;
+    case 0b00010011: code = Hex_vdmpy,  f = RP( SF, HF, HF), flags = IAT_ADD; break;
+    case 0b00011000: code = Hex_vfmin,  f = RP( HF, HF, HF); break;
+    case 0b00011001: code = Hex_vfmin,  f = RP( SF, SF, SF); break;
+    case 0b00011010: code = Hex_vfmax,  f = RP( HF, HF, HF); break;
+    case 0b00011011: code = Hex_vfmax,  f = RP( SF, SF, SF); break;
+    case 0b11011000: code = Hex_vsub,   f = RP( HF, HF, HF); break;
+    case 0b11011001: code = Hex_vcvt_2, f = RP( HF, SF, SF); break;
+    case 0b11011010: code = Hex_vadd,   f = RP(Q16,Q16,Q16); break;
+    case 0b11011011: code = Hex_vadd,   f = RP(Q16, HF, HF); break;
+    case 0b11011100: code = Hex_vadd,   f = RP(Q16,Q16, HF); break;
+    case 0b11011101: code = Hex_vsub,   f = RP(Q16,Q16,Q16); break;
+    case 0b11011110: code = Hex_vsub,   f = RP(Q16, HF, HF); break;
+    case 0b11011111: code = Hex_vsub,   f = RP(Q16,Q16, HF); break;
+    case 0b11100000: code = Hex_vmpy,   f = RP(Q32,Q16, HF) | DD; break;
+    case 0b11100001: code = Hex_vmpy,   f = RP( SF, SF, SF); break;
+    case 0b11100010: code = Hex_vmpy,   f = RP( SF, HF, HF) | DD; break;
+    case 0b11100011: code = Hex_vmpy,   f = RP( HF, HF, HF); break;
+    case 0b11100100: code = Hex_vadd,   f = RP( SF, HF, HF) | DD; break;
+    case 0b11100101: code = Hex_vsub,   f = RP( SF, HF, HF) | DD; break;
+    case 0b11100110: code = Hex_vadd,   f = RP( SF, SF, SF); break;
+    case 0b11100111: code = Hex_vsub,   f = RP( SF, SF, SF); break;
+    case 0b11101000: code = Hex_vadd,   f = RP(Q32,Q32,Q32); break;
+    case 0b11101001: code = Hex_vadd,   f = RP(Q32, SF, SF); break;
+    case 0b11101010: code = Hex_vadd,   f = RP(Q32,Q32, SF); break;
+    case 0b11101011: code = Hex_vsub,   f = RP(Q32,Q32,Q32); break;
+    case 0b11101100: code = Hex_vsub,   f = RP(Q32, SF, SF); break;
+    case 0b11101101: code = Hex_vsub,   f = RP(Q32,Q32, SF); break;
+    case 0b11101110: code = Hex_vdmpy,  f = RP( SF, HF, HF); break;
+    case 0b11101111: code = Hex_vadd,   f = RP( HF, HF, HF); break;
+    case 0b11110001: code = Hex_vmax,   f = RP( SF, SF, SF); break;
+    case 0b11110010: code = Hex_vmin,   f = RP( SF, SF, SF); break;
+    case 0b11110011: code = Hex_vmax,   f = RP( HF, HF, HF); break;
+    case 0b11110100: code = Hex_vmin,   f = RP( HF, HF, HF); break;
+    case 0b11110101: code = Hex_vcvt_2, f = RP( UB, HF, HF); break;
+    case 0b11110110: code = Hex_vcvt_2, f = RP(  B, HF, HF); break;
+    case 0b11111000: code = Hex_vmpy,   f = RP(Q32,Q32,Q32); break;
+    case 0b11111001: code = Hex_vmpy,   f = RP(Q32, SF, SF); break;
+    case 0b11111011: code = Hex_vmpy,   f = RP(Q16,Q16,Q16); break;
+    case 0b11111100: code = Hex_vmpy,   f = RP(Q16, HF, HF); break;
+    case 0b11111101: code = Hex_vmpy,   f = RP(Q16,Q16, HF); break;
+    case 0b11111110: code = Hex_vmpy,   f = RP(Q32,Q16,Q16) | DD; break;
+    case 0b11111111: code = Hex_vmpy,   f = RP(Q32, HF, HF) | DD; break;
     default: return 0;
     }
     op_reg( ops[0], REG_V(d5), FLG_D(f) );
@@ -3842,13 +3878,13 @@ static uint32_t iclass_1_HVX_v73( uint32_t word, uint64_t /*extender*/, op_t *op
         // various .bf ops
         switch( (BIT(22) << 3) | BITS(7:5) )
         {
-        case 0b0000: code = Hex_vmpy,  f = RP(SF, BF, BF) | DD, flags = IAT_ADD; break;
-        case 0b1000: code = Hex_vmin,  f = RP(BF, BF, BF); break;
-        case 0b1011: code = Hex_vcvt2, f = RP(BF, SF, SF); break;
-        case 0b1100: code = Hex_vmpy,  f = RP(SF, BF, BF) | DD; break;
-        case 0b1101: code = Hex_vsub,  f = RP(SF, BF, BF) | DD; break;
-        case 0b1110: code = Hex_vadd,  f = RP(SF, BF, BF) | DD; break;
-        case 0b1111: code = Hex_vmax,  f = RP(BF, BF, BF); break;
+        case 0b0000: code = Hex_vmpy,   f = RP(SF, BF, BF) | DD, flags = IAT_ADD; break;
+        case 0b1000: code = Hex_vmin,   f = RP(BF, BF, BF); break;
+        case 0b1011: code = Hex_vcvt_2, f = RP(BF, SF, SF); break;
+        case 0b1100: code = Hex_vmpy,   f = RP(SF, BF, BF) | DD; break;
+        case 0b1101: code = Hex_vsub,   f = RP(SF, BF, BF) | DD; break;
+        case 0b1110: code = Hex_vadd,   f = RP(SF, BF, BF) | DD; break;
+        case 0b1111: code = Hex_vmax,   f = RP(BF, BF, BF); break;
         default: return 0;
         }
         op_reg( ops[0], REG_V(d5), FLG_D(f) );
@@ -3870,6 +3906,113 @@ static uint32_t iclass_1_HVX_v73( uint32_t word, uint64_t /*extender*/, op_t *op
         op_reg( ops[0], REG_V(d5), FLG_D(f) );
         op_reg( ops[1], REG_V(u5), FLG_S(f) );
         return Hex_mov;
+    }
+    return 0;
+}
+
+static uint32_t iclass_1_HVX_v79( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &flags )
+{
+    uint32_t s5 = BITS(20:16), u5 = BITS(12:8), d5 = BITS(4:0), code, f;
+
+    if( BITS(27:21) == 0b1001110 && BIT(13) == 0 )
+    {
+        // Vd32.x = vsetqfext(Vu32,Rt32)
+        // Vx32 [|]= vgetqfext(Vu32.x,Rt32)
+        switch( BITS(7:5) )
+        {
+        case 0b011: code = Hex_vsetqfext, f = RP(X, _, _); break;
+        case 0b110: code = Hex_vgetqfext, f = RP(_, X, _), flags = IAT_OR; break;
+        case 0b111: code = Hex_vgetqfext, f = RP(_, X, _); break;
+        default: return 0;
+        }
+        op_reg( ops[0], REG_V(d5), FLG_D(f) );
+        op_reg( ops[1], REG_V(u5), FLG_S(f) );
+        op_reg( ops[2], REG_R(s5) );
+        return code;
+    }
+    if( BITS(27:21) == 0b1010000 && BIT(13) == 1 )
+    {
+        // Vd32.qf{32|16} = vmpy(Vu32.{sf|qf16|hf},Rt32.{sf|hf})
+        switch( BITS(7:5) )
+        {
+        case 0b001: f = RP(Q32, SF, SF); break;
+        case 0b010: f = RP(Q16,Q16, HF); break;
+        case 0b011: f = RP(Q16, HF, HF); break;
+        default: return 0;
+        }
+        op_reg( ops[0], REG_V(d5), FLG_D(f) );
+        op_reg( ops[1], REG_V(u5), FLG_S(f) );
+        op_reg( ops[2], REG_R(s5), FLG_T(f) );
+        return Hex_vmpy;
+    }
+    if( BITS(27:21) == 0b1010110 && BIT(13) == 1 && BITS(7:6) == 0b11 )
+    {
+        // Vd32.[u]b = vcvt2(Vu32.hf,Vv32.hf)
+        op_reg( ops[0], REG_V(d5), BIT(5)? REG_POST_UB : REG_POST_B );
+        op_reg( ops[1], REG_V(u5), REG_POST_HF );
+        op_reg( ops[2], REG_V(s5), REG_POST_HF );
+        return Hex_vcvt2_2;
+    }
+    if( BITS(27:21) == 0b1100011 && BIT(13) == 1 && BITS(7:6) == 0b10 )
+    {
+        // Vd32.f8 = vf{max|min}(Vu32.f8,Vv32.f8)
+        op_reg( ops[0], REG_V(d5), REG_POST_F8 );
+        op_reg( ops[1], REG_V(u5), REG_POST_F8 );
+        op_reg( ops[2], REG_V(s5), REG_POST_F8 );
+        return BIT(5)? Hex_vfmax : Hex_vfmin;
+    }
+    if( BITS(27:16) == 0b110001100110 && BIT(13) == 1 && BITS(7:6) == 0b11 )
+    {
+        // Vd32.f8 = {vabs|vfneg}(Vu32.f8)
+        op_reg( ops[0], REG_V(d5), REG_POST_F8 );
+        op_reg( ops[1], REG_V(u5), REG_POST_F8 );
+        return BIT(5)? Hex_vfneg : Hex_vabs;
+    }
+    if( BITS(27:16) == 0b111000000101 && BIT(13) == 1 && BITS(7:5) == 0b101 )
+    {
+        // Vdd32.hf = vcvt(Vu32.f8)
+        op_reg( ops[0], REG_V(d5), REG_POST_HF | REG_DOUBLE );
+        op_reg( ops[1], REG_V(u5), REG_POST_F8 );
+        return Hex_vcvt;
+    }
+    if( BITS(27:16) == 0b111011010101 && BIT(13) == 1 && BITS(7:6) == 0b11 )
+    {
+        // Vdd32.hf = vcvt2(Vu32.[u]b)
+        op_reg( ops[0], REG_V(d5), REG_POST_HF | REG_DOUBLE );
+        op_reg( ops[1], REG_V(u5), BIT(5)? REG_POST_UB : REG_POST_B );
+        return Hex_vcvt2;
+    }
+    if( BITS(27:21) == 0b1111000 && BIT(13) == 1 && BITS(7:5) == 0b111 )
+    {
+        // Vd32 = vmerge(Vu32.x,Vv32.w)
+        op_reg( ops[0], REG_V(d5) );
+        op_reg( ops[1], REG_V(u5), REG_POST_X );
+        op_reg( ops[2], REG_V(s5), REG_POST_W );
+        return Hex_vmerge;
+    }
+    if( BITS(27:21) == 0b1111100 && BIT(13) == 0 )
+    {
+        // Vdd32.hf [+]= {vadd|vsub|vmpy}(Vu32.f8,Vv32.f8)
+        switch( BITS(7:5) )
+        {
+        case 0b100: code = Hex_vadd; break;
+        case 0b101: code = Hex_vsub; break;
+        case 0b110: code = Hex_vmpy; break;
+        case 0b111: code = Hex_vmpy, flags = IAT_ADD; break;
+        default: return 0;
+        }
+        op_reg( ops[0], REG_V(d5), REG_POST_HF | REG_DOUBLE );
+        op_reg( ops[1], REG_V(u5), REG_POST_F8 );
+        op_reg( ops[2], REG_V(s5), REG_POST_F8 );
+        return code;
+    }
+    if( BITS(27:21) == 0b1111111 && BIT(13) == 1 && BITS(7:5) == 0b010 )
+    {
+        // Vd32.f8 = vcvt(Vu32.hf,Vv32.hf)
+        op_reg( ops[0], REG_V(d5), REG_POST_F8 );
+        op_reg( ops[1], REG_V(u5), REG_POST_HF );
+        op_reg( ops[2], REG_V(s5), REG_POST_HF );
+        return Hex_vcvt_2;
     }
     return 0;
 }
@@ -4083,28 +4226,22 @@ static uint32_t iclass_9_HVX( uint32_t word, uint64_t /*extender*/, op_t *ops, u
 // HMX instructions parsing
 //
 
-static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &/*flags*/ )
+static uint32_t iclass_9_HMX_LD( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &/*flags*/ )
 {
     if( BITS(27:21) != 0b0010000 )
         return 0;
 
     uint32_t s5 = BITS(20:16), t5 = BITS(12:8);
-    if( BIT(13) == 1 && BITS(7:5) == 0b010 )
+    if( BIT(13) == 1 && BITS(7:5) == 0b010 && IN_RANGE(BITS(4:0), 1, 12) )
     {
-        // weight.n = mxmem(Rs32,Rt32):2x:...
-        uint32_t suff;
-        switch( BITS(4:0) )
-        {
-        case 0b00001: suff = MX_SINGLE; break;
-        case 0b00010: suff = MX_DROP; break;
-        case 0b00011: suff = MX_DEEP; break;
-        case 0b00100: suff = MX_DILATE; break;
-        case 0b00101: suff = MX_AFTER; break;
-        case 0b00110: suff = 0; break;
-        default: return 0;
-        }
-        op_reg( ops[0], REG_WEIGHT, REG_POST_N );
-        op_mxmem( ops[1], MX_2X | suff, REG_R(s5), REG_R(t5) );
+        // weight.{n|f8} = mxmem(Rs32,Rt32):...
+        static const uint8_t suff[13] = {
+            0xFF,  MX_2X | MX_SINGLE, MX_2X | MX_DROP, MX_2X | MX_DEEP,
+            MX_2X | MX_DILATE, MX_2X | MX_AFTER, MX_2X, 0, MX_SINGLE,
+            MX_DROP, MX_DEEP, MX_AFTER, MX_DILATE,
+        };
+        op_reg( ops[0], REG_WEIGHT, BITS(4:0) < 7? REG_POST_N : REG_POST_F8 );
+        op_mxmem( ops[1], suff[ BITS(4:0) ], REG_R(s5), REG_R(t5) );
         return Hex_mov;
     }
     if( BITS(7:6) == 0b11 )
@@ -4118,28 +4255,33 @@ static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, u
         }
         if( BIT(13) == 0 && BIT(5) == 1 )
         {
-            // activation.{ub|hf} = mxmem(Rs32,Rt32):...
-            uint32_t suff, ub;
+            // activation.{ub|hf|f8} = mxmem(Rs32,Rt32):...
+            uint32_t suff, dt;
             switch( BITS(4:0) )
             {
-            case 0b00000: ub = 1, suff = MX_DEEP; break;
-            case 0b00001: ub = 1, suff = MX_DEEP | MX_CM; break;
-            case 0b00010: ub = 0, suff = MX_DEEP; break;
-            case 0b00100: ub = 0, suff = 0; break;
-            case 0b00110: ub = 0, suff = MX_ABOVE; break;
-            case 0b01000: ub = 1, suff = MX_DILATE; break;
-            case 0b01001: ub = 1, suff = MX_DILATE | MX_CM; break;
-            case 0b01100: ub = 1, suff = 0; break;
-            case 0b01101: ub = 1, suff = MX_CM; break;
-            case 0b01110: ub = 1, suff = MX_ABOVE; break;
-            case 0b01111: ub = 1, suff = MX_ABOVE | MX_CM; break;
-            case 0b10000: ub = 1, suff = MX_SINGLE; break;
-            case 0b10001: ub = 1, suff = MX_SINGLE | MX_CM; break;
-            case 0b11000: ub = 0, suff = MX_SINGLE; break;
-            case 0b11010: ub = 0, suff = MX_DILATE; break;
+            case 0b00000: dt = REG_POST_UB, suff = MX_DEEP; break;
+            case 0b00001: dt = REG_POST_UB, suff = MX_DEEP | MX_CM; break;
+            case 0b00010: dt = REG_POST_HF, suff = MX_DEEP; break;
+            case 0b00011: dt = REG_POST_F8, suff = MX_DEEP; break;
+            case 0b00100: dt = REG_POST_HF, suff = 0; break;
+            case 0b00101: dt = REG_POST_F8, suff = 0; break;
+            case 0b00110: dt = REG_POST_HF, suff = MX_ABOVE; break;
+            case 0b00111: dt = REG_POST_F8, suff = MX_ABOVE; break;
+            case 0b01000: dt = REG_POST_UB, suff = MX_DILATE; break;
+            case 0b01001: dt = REG_POST_UB, suff = MX_DILATE | MX_CM; break;
+            case 0b01100: dt = REG_POST_UB, suff = 0; break;
+            case 0b01101: dt = REG_POST_UB, suff = MX_CM; break;
+            case 0b01110: dt = REG_POST_UB, suff = MX_ABOVE; break;
+            case 0b01111: dt = REG_POST_UB, suff = MX_ABOVE | MX_CM; break;
+            case 0b10000: dt = REG_POST_UB, suff = MX_SINGLE; break;
+            case 0b10001: dt = REG_POST_UB, suff = MX_SINGLE | MX_CM; break;
+            case 0b11000: dt = REG_POST_HF, suff = MX_SINGLE; break;
+            case 0b11001: dt = REG_POST_F8, suff = MX_SINGLE; break;
+            case 0b11010: dt = REG_POST_HF, suff = MX_DILATE; break;
+            case 0b11011: dt = REG_POST_F8, suff = MX_DILATE; break;
             default: return 0;
             }
-            op_reg( ops[0], REG_ACTIVATION, ub? REG_POST_UB : REG_POST_HF );
+            op_reg( ops[0], REG_ACTIVATION, dt );
             op_mxmem( ops[1], suff, REG_R(s5), REG_R(t5) );
             return Hex_mov;
         }
@@ -4207,7 +4349,7 @@ static uint32_t iclass_9_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, u
     return 0;
 }
 
-static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &/*flags*/ )
+static uint32_t iclass_10_HMX_ST( uint32_t word, uint64_t /*extender*/, op_t *ops, uint32_t &/*flags*/ )
 {
     if( BITS(27:21) != 0b0110111 || BITS(7:5) != 0 )
         return 0;
@@ -4275,6 +4417,7 @@ static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, 
             return Hex_mxswap;
         case 0b111:
             // acc=mxshl(acc,#16)
+            if( s5 ) return 0;
             op_acc( ops[0] );
             op_imm( ops[1], 16 );
             return Hex_mxshl;
@@ -4298,11 +4441,11 @@ static uint32_t iclass_10_HMX( uint32_t word, uint64_t /*extender*/, op_t *ops, 
         op_acc( ops[1], suff, REG_R(s5) );
         return Hex_mov;
     }
-    if( BIT(13) == 0 && BITS(4:2) == 0b110 && BITS(1:0) != 3 )
+    if( BIT(13) == 0 && BITS(4:3) == 0b11 && BITS(2:0) <= 4 )
     {
-        // mxmem(Rs32,Rt32)[:cm|:2x2] = cvt
-        static const uint32_t suff[3] = { 0, MX_CM, MX_2X2 };
-        op_mxmem( ops[0], suff[ BITS(1:0) ], REG_R(s5), REG_R(t5) );
+        // mxmem(Rs32,Rt32)[:cm|:deep|:2x2] = cvt
+        static const uint32_t suff[5] = { 0, MX_CM, MX_2X2, MX_DEEP, MX_CM | MX_DEEP };
+        op_mxmem( ops[0], suff[ BITS(2:0) ], REG_R(s5), REG_R(t5) );
         op_reg( ops[1], REG_CVT );
         return Hex_mov;
     }
@@ -4540,6 +4683,7 @@ static bool decode_single( insn_t &insn, uint32_t word, uint64_t extender )
         if( !itype ) itype = iclass_1_HVX_v68( word, extender, ops, flags );
         if( !itype ) itype = iclass_1_HVX_v69( word, extender, ops, flags );
         if( !itype ) itype = iclass_1_HVX_v73( word, extender, ops, flags );
+        if( !itype ) itype = iclass_1_HVX_v79( word, extender, ops, flags );
         break;
     case 2:
         itype = iclass_2_NCJ( word, extender, ops, flags );
@@ -4569,15 +4713,16 @@ static bool decode_single( insn_t &insn, uint32_t word, uint64_t extender )
     case 9:
         itype = iclass_9_LD( word, extender, ops, flags );
         if( !itype ) itype = iclass_9_LD_EXT( word, extender, ops, flags );
+        if( !itype ) itype = iclass_9_SYS( word, extender, ops, flags );
         if( !itype ) itype = iclass_9_HVX( word, extender, ops, flags );
-        if( !itype ) itype = iclass_9_HMX( word, extender, ops, flags );
+        if( !itype ) itype = iclass_9_HMX_LD( word, extender, ops, flags );
         if( !itype ) itype = iclass_9_DMA( word, extender, ops, flags );
         break;
     case 10:
         itype = iclass_10_ST( word, extender, ops, flags );
         if( !itype ) itype = iclass_10_ST_EXT( word, extender, ops, flags );
         if( !itype ) itype = iclass_10_SYS( word, extender, ops, flags );
-        if( !itype ) itype = iclass_10_HMX( word, extender, ops, flags );
+        if( !itype ) itype = iclass_10_HMX_ST( word, extender, ops, flags );
         if( !itype ) itype = iclass_10_DMA( word, extender, ops, flags );
         break;
     case 11:

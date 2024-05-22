@@ -55,7 +55,7 @@ static void handle_insn( const insn_t &insn )
 {
     const op_t *ops = insn.ops;
     func_t *pfn = get_func( insn.ea );
-    flags_t F;
+    flags64_t F;
 
     switch( insn.itype )
     {
@@ -126,7 +126,7 @@ static void create_stack_spill_vars( func_t *pfn, ea_t target )
 static void handle_operand( const insn_t &insn, const op_t &op )
 {
     fixup_data_t fd;
-    flags_t F;
+    flags64_t F;
 
     switch( op.type )
     {
@@ -352,7 +352,7 @@ int hex_is_sp_based( const insn_t &/*insn*/, const op_t &op )
 void hex_get_cc_regs( cm_t /*cc*/, callregs_t &regs )
 {
     // provide register allocation schema to IDA
-    static const int r0_5[] = { REG_R0 + 0, REG_R0 + 1, REG_R0 + 2, REG_R0 + 3, REG_R0 + 4, REG_R0 + 5, -1 };
+    static const int r0_5[] = { REG_R(0), REG_R(1), REG_R(2), REG_R(3), REG_R(4), REG_R(5), -1 };
     regs.set( ARGREGS_GP_ONLY, r0_5, NULL );
 }
 
@@ -363,15 +363,15 @@ bool hex_calc_retloc( cm_t /*cc*/, const tinfo_t &type, argloc_t &loc )
         size_t size = type.get_size();
         if( size == BADSIZE ) return false;
         if( size <= 4 )
-            loc.set_reg1( REG_R0 );
+            loc.set_reg1( REG_R(0) );
         else if( size <= 8 )
-            loc.set_reg2( REG_R0, REG_R0 + 1 );
+            loc.set_reg2( REG_R(0), REG_R(1) );
         else
         {
             // allocate on stack with pointer in R0
             scattered_aloc_t *sa = new scattered_aloc_t;
             argpart_t &regloc = sa->push_back();
-            regloc.set_reg1( REG_R0 );
+            regloc.set_reg1( REG_R(0) );
             regloc.off = 0;
             regloc.size = 4;
             argpart_t &stkloc = sa->push_back();
@@ -403,14 +403,14 @@ bool hex_calc_arglocs( func_type_data_t &fti )
         if( size == BADSIZE ) return false;
         if( size <= 4 && reg <= 5 )
         {
-            arg.argloc.set_reg1( REG_R0 + reg );
+            arg.argloc.set_reg1( REG_R(reg) );
             reg++;
         }
         else if( size <= 8 && reg < 5 )
         {
             // skip odd-numbered register
             reg = (reg + 1) & ~1;
-            arg.argloc.set_reg2( REG_R0 + reg, REG_R0 + reg + 1 );
+            arg.argloc.set_reg2( REG_R(reg), REG_R(reg + 1) );
             reg += 2;
         }
         else
@@ -430,12 +430,12 @@ static bool insn_modifies_op0( uint32_t itype )
 {
     // returns true if instruction writes to %0
     // NB: regenerate if instructions or their order changes!
-    static const uint32_t mod[] = {
-        0xfffffffe, 0xbf7fffff, 0xffffffff, 0x0014e701, 0x08b42020, 0x87001300, 0xffffffff, 0xffffffff,
-        0xffffffff, 0xffffffff, 0x99ffffff, 0x3ffffffb, 0xffffffff, 0xf07fffcf,
+    static const uint64_t mod[] = {
+        0xbf7ffffffffffffe, 0x0014e701ffffffff, 0x8700130008b42020, 0xffffffffffffffff,
+        0xffffffffffffffff, 0xfffffffb99ffffff, 0xffe7fffffffffcff, 0x000000000001707f,
     };
-    assert( itype < _countof(mod) * 32 );
-    return (mod[ itype >> 5 ] >> (itype & 31)) & 1;
+    assert( itype < _countof(mod) * 64 );
+    return (mod[ itype >> 6 ] >> (itype & 63)) & 1;
 }
 
 // hack to skip our target function call

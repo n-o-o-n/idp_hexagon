@@ -50,9 +50,13 @@ Issues
 
 Other Hexagon Processor modules
 ===============================
+ * [Binary Ninja](https://binary.ninja/)
+ * [binja-hexagon](https://github.com/google/binja-hexagon) (Community Plugin)
+ * [Ghidra Hexagon SLEIGH](https://github.com/CUB3D/ghidra-hexagon-sleigh)
+ * [hexag00n](https://github.com/programa-stic/hexag00n) (abandoned)
  * [hexagon](https://github.com/gsmk/hexagon)
- * [nogaxeh](https://github.com/ANSSI-FR/nogaxeh)
- * [hexag00n](https://github.com/programa-stic/hexag00n)
+ * [nogaxeh](https://github.com/ANSSI-FR/nogaxeh) (archived)
+ * [Rizin](https://github.com/rizinorg/rizin) ([Plugin Generator](https://github.com/rizinorg/rz-hexagon))
 
 
 Author
